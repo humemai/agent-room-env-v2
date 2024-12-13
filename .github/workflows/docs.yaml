@@ -49,7 +49,7 @@ jobs:
       - name: Build documentation for lstm
         run: |
           cd lstm
-          python -m pdoc -d google -o _docs/ .
+          python -m pdoc -d google -o _docs/ agent
 
       # Step for gnn
       - name: Install requirements for gnn
@@ -64,7 +64,7 @@ jobs:
       - name: Build documentation for gnn
         run: |
           cd gnn
-          python -m pdoc -d google -o _docs/ .
+          python -m pdoc -d google -o _docs/ agent
 
       # Step for cb
       - name: Install requirements for cb
@@ -79,7 +79,7 @@ jobs:
       - name: Build documentation for cb
         run: |
           cd cb
-          python -m pdoc -d google -o _docs/ .
+          python -m pdoc -d google -o _docs/ agent
 
       - uses: actions/upload-pages-artifact@v2
         with:
