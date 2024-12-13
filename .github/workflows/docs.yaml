@@ -35,22 +35,22 @@ jobs:
       - name: Upgrade pip and build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel pdoc pytest
-      
-      # Step for cb
-      - name: Install requirements for cb
+
+      # Step for lstm
+      - name: Install requirements for lstm
         run: |
-          cd cb
+          cd lstm
           python -m pip install -r requirements.txt
-      - name: Create output dir for cb
+      - name: Create output dir for lstm
         run: |
-          cd cb
+          cd lstm
           rm -rf _docs 
           mkdir _docs
-      - name: Build documentation for cb
+      - name: Build documentation for lstm
         run: |
-          cd cb
+          cd lstm
           python -m pdoc -d google -o _docs/ .
-      
+
       # Step for gnn
       - name: Install requirements for gnn
         run: |
@@ -65,20 +65,20 @@ jobs:
         run: |
           cd gnn
           python -m pdoc -d google -o _docs/ .
-      
-      # Step for lstm
-      - name: Install requirements for lstm
+
+      # Step for cb
+      - name: Install requirements for cb
         run: |
-          cd lstm
+          cd cb
           python -m pip install -r requirements.txt
-      - name: Create output dir for lstm
+      - name: Create output dir for cb
         run: |
-          cd lstm
+          cd cb
           rm -rf _docs 
           mkdir _docs
-      - name: Build documentation for lstm
+      - name: Build documentation for cb
         run: |
-          cd lstm
+          cd cb
           python -m pdoc -d google -o _docs/ .
 
       - uses: actions/upload-pages-artifact@v2
