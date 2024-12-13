@@ -35,19 +35,55 @@ jobs:
       - name: Upgrade pip and build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel pdoc pytest
-      - name: Install requirements
+      
+      # Step for cb
+      - name: Install requirements for cb
         run: |
-          python -m pip install -r requirements.txt        
-      - name: Create output dir
+          cd cb
+          python -m pip install -r requirements.txt
+      - name: Create output dir for cb
         run: |
+          cd cb
           rm -rf _docs 
           mkdir _docs
-      - name: Build documentation
+      - name: Build documentation for cb
         run: |
-          python -m pdoc -d google -o _docs/ agent
+          cd cb
+          python -m pdoc -d google -o _docs/ .
+      
+      # Step for gnn
+      - name: Install requirements for gnn
+        run: |
+          cd gnn
+          python -m pip install -r requirements.txt
+      - name: Create output dir for gnn
+        run: |
+          cd gnn
+          rm -rf _docs 
+          mkdir _docs
+      - name: Build documentation for gnn
+        run: |
+          cd gnn
+          python -m pdoc -d google -o _docs/ .
+      
+      # Step for lstm
+      - name: Install requirements for lstm
+        run: |
+          cd lstm
+          python -m pip install -r requirements.txt
+      - name: Create output dir for lstm
+        run: |
+          cd lstm
+          rm -rf _docs 
+          mkdir _docs
+      - name: Build documentation for lstm
+        run: |
+          cd lstm
+          python -m pdoc -d google -o _docs/ .
+
       - uses: actions/upload-pages-artifact@v2
         with:
-          path: "./_docs/"
+          path: "./cb/_docs/ ./gnn/_docs/ ./lstm/_docs/"
 
   # Deploy the artifact to GitHub pages.
   # This is a separate job so that only actions/deploy-pages has the necessary permissions.
