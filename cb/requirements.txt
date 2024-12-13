@@ -12,3 +12,4 @@ bitsandbytes>=0.43.3
 transformers>=4.44.2
 ipython
 ipykernel
+gymnasium==0.29.1

@@ -8,3 +8,4 @@ tqdm==4.66.4
 PyYAML>=6.0.1
 ipython
 ipykernel
+gymnasium==0.29.1
