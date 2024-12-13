@@ -1,0 +1,7 @@
+total: 120203
+gcn_layers: 41472
+mlp_mm: 33284
+mlp_explore: 17030
+mlp_qa: 16577
+entity_embeddings: 10176
+relation_embeddings: 1664

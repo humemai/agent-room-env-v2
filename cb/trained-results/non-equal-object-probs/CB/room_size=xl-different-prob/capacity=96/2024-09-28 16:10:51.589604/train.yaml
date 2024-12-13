@@ -1,0 +1,56 @@
+env_str: room_env:RoomEnv-v2
+num_iterations: 20000
+replay_buffer_size: 20000
+warm_start: 32
+batch_size: 32
+epsilon_decay_until: 20000
+max_epsilon: 1.0
+min_epsilon: 0.1
+learning_rate: 0.001
+capacity:
+  long: 96
+  short: 15
+semantic_decay_factor: 0.8
+dqn_params:
+  gcn_layer_params:
+    type: stare
+    embedding_dim: 64
+    num_layers: 2
+    gcn_drop: 0.1
+    triple_qual_weight: 0.8
+  relu_between_gcn_layers: true
+  dropout_between_gcn_layers: false
+  mlp_params:
+    num_hidden_layers: 2
+    dueling_dqn: true
+  use_raw_embeddings_for_qa: false
+num_samples_for_results:
+  val: 5
+  test: 10
+plotting_interval: 50
+train_seed: 8
+test_seed: 3
+device: cpu
+env_config:
+  question_prob: 1.0
+  terminates_at: 99
+  randomize_observations: all
+  room_size: xl-different-prob
+  rewards:
+    correct: 1
+    wrong: 0
+    partial: 0
+  make_everything_static: false
+  num_total_questions: 1000
+  question_interval: 1
+  include_walls_in_observations: true
+ddqn: true
+default_root_dir: ./training-results/non-equal-object-probs/dqn/room_size=xl-different-prob/capacity=96/
+qa_function: bandit
+qa_entities: all
+pretrained_path: trained-results/non-equal-object-probs/dqn/room_size=xl-different-prob/capacity=96/2024-08-12
+  23:58:06.290168/
+llm_params:
+  model_id: meta-llama/Meta-Llama-3.1-8B-Instruct
+  quantization: 4bit
+  max_new_tokens: 32
