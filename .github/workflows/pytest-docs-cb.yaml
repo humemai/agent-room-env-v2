@@ -34,16 +34,16 @@ jobs:
           cd cb
           python -m pytest .
 
-      - name: Build documentation
-        run: |
-          cd cb
-          rm -rf _docs
-          mkdir _docs
-          python -m pdoc -d google -o _docs/ agent
+      # - name: Build documentation
+      #   run: |
+      #     cd cb
+      #     rm -rf _docs
+      #     mkdir _docs
+      #     python -m pdoc -d google -o _docs/ agent
 
-      - name: Deploy documentation
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: cb/_docs
-          destination_dir: cb
+      # - name: Deploy documentation
+      #   uses: peaceiris/actions-gh-pages@v3
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     publish_dir: cb/_docs
+      #     destination_dir: cb

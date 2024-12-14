@@ -1,8 +1,6 @@
 # Agent for RoomEnv-v2
 
-- This repo trains an agent with a GNN that interacts with the [RoomEnv-v2](https://github.com/humemai/room-env)
-- HumemAI-QA learns a question answering function with contextual bandit.
-- HumemAI-QA is built on [HumemAI-Unified](https://github.com/humemai/agent-room-env-v2-gnn)
+- This directory contains an agent with a GNN-CB that interacts with the [RoomEnv-v2](https://github.com/humemai/room-env)
 
 ## Prerequisites
 
@@ -17,52 +15,32 @@
 - [Training our agent (and their hyperparameters)](train-dqn.ipynb)
 - [Running trained models](run-trained-models.ipynb)
 
-## Training Results
+## Results
 
-| Capacity | Agent Type          | Phase 1   | Phase 2       |
-| -------- | ------------------- | --------- | ------------- |
-| 12       | HumemAI-Unified     | N/A       | 152 (±7)      |
-|          | **HumemAI**         | 105 (±37) | **160 (±30)** |
-|          | Baseline            | N/A       | 144 (±14)     |
-| 24       | **HumemAI-Unified** | N/A       | **233 (±34)** |
-|          | HumemAI             | 127 (±26) | 214 (±64)     |
-|          | Baseline            | N/A       | 138 (±52)     |
-| 48       | **HumemAI-Unified** | N/A       | **341 (±21)** |
-|          | HumemAI             | 118 (±18) | 235 (±37)     |
-|          | Baseline            | N/A       | 200 (±15)     |
-| 96       | **HumemAI-Unified** | N/A       | **466 (±37)** |
-|          | HumemAI             | 217 (±27) | 209 (±87)     |
-|          | Baseline            | N/A       | 155 (±77)     |
-| 192      | **HumemAI-Unified** | N/A       | **482 (±14)** |
-|          | HumemAI             | 265 (±22) | 176 (±115)    |
-|          | Baseline            | N/A       | 144 (±68)     |
-
-## pdoc documentation
-
-Click on [this link](https://humemai.github.io/agent-room-env-v2-qa) to see the HTML
-rendered docstrings
-
-## Contributing
-
-Contributions are what make the open source community such an amazing place to be learn,
-inspire, and create. Any contributions you make are **greatly appreciated**.
-
-1. Fork the Project
-1. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-1. Run `make test && make style && make quality` in the root repo directory, to ensure
-   code quality.
-1. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-1. Push to the Branch (`git push origin feature/AmazingFeature`)
-1. Open a Pull Request
-
-## [Cite our paper](<>)
-
-```bibtex
-
-```
-
-## Authors
-
-- [Taewoon Kim](https://taewoon.kim/)
-- [Michael Cochez](https://www.cochez.nl/)
-- [Vincent Francois-Lavet](http://vincent.francois-l.be/)
+| Capacity | Agent Type       | Test Score (±σ) |
+| -------- | ---------------- | --------------- |
+| 12       | QA-CB-Bandit     | **216 (±5)**    |
+|          | **QA-LLM**       | **262 (±8)**    |
+|          | HumemAI-Unified  | 152 (±7)        |
+|          | HumemAI          | 160 (±30)       |
+|          | Baseline         | 144 (±14)       |
+| 24       | **QA-CB-Bandit** | **396 (±23)**   |
+|          | QA-LLM           | 318 (±18)       |
+|          | HumemAI-Unified  | 233 (±34)       |
+|          | HumemAI          | 214 (±64)       |
+|          | Baseline         | 138 (±52)       |
+| 48       | **QA-CB-Bandit** | **488 (±15)**   |
+|          | QA-LLM           | 340 (±22)       |
+|          | HumemAI-Unified  | 341 (±21)       |
+|          | HumemAI          | 235 (±37)       |
+|          | Baseline         | 200 (±15)       |
+| 96       | **QA-CB-Bandit** | **554 (±20)**   |
+|          | QA-LLM           | 419 (±16)       |
+|          | HumemAI-Unified  | 466 (±37)       |
+|          | HumemAI          | 209 (±87)       |
+|          | Baseline         | 155 (±77)       |
+| 192      | **QA-CB-Bandit** | **512 (±19)**   |
+|          | QA-LLM           | 306 (±31)       |
+|          | HumemAI-Unified  | 482 (±14)       |
+|          | HumemAI          | 176 (±115)      |
+|          | Baseline         | 144 (±68)       |

@@ -34,16 +34,16 @@ jobs:
           cd gnn
           python -m pytest .
 
-      - name: Build documentation
-        run: |
-          cd gnn
-          rm -rf _docs
-          mkdir _docs
-          python -m pdoc -d google -o _docs/ agent
+      # - name: Build documentation
+      #   run: |
+      #     cd gnn
+      #     rm -rf _docs
+      #     mkdir _docs
+      #     python -m pdoc -d google -o _docs/ agent
 
-      - name: Deploy documentation
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: gnn/_docs
-          destination_dir: gnn
+      # - name: Deploy documentation
+      #   uses: peaceiris/actions-gh-pages@v3
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     publish_dir: gnn/_docs
+      #     destination_dir: gnn
