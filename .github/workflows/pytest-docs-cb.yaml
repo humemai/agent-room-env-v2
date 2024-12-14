@@ -7,7 +7,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # Allow write access to the repository.
+  contents: write
+  pages: write
+  id-token: write
 
 jobs:
   cb:
