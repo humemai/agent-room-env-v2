@@ -6,6 +6,9 @@ on:
       - "**"
   workflow_dispatch:
 
+permissions:
+  contents: write  # Allow write access to the repository.
+
 jobs:
   lstm:
     runs-on: ubuntu-latest
