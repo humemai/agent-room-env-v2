@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # Allow write access to the repository. 
-    
+  contents: write # Allow write access to the repository.
+
 jobs:
   gnn:
     runs-on: ubuntu-latest
@@ -47,5 +47,5 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: lstm/_docs
-          destination_dir: lstm          
+          publish_dir: gnn/_docs
+          destination_dir: gnn
