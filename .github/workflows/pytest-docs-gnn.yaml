@@ -40,7 +40,6 @@ jobs:
           rm -rf _docs
           mkdir _docs
           python -m pdoc -d google -o _docs/ agent
-          cp _docs/index.html _docs/
 
       - name: Deploy documentation
         uses: peaceiris/actions-gh-pages@v3

@@ -1,8 +1,5 @@
 # Agent for RoomEnv-v2
 
-[![DOI](https://zenodo.org/badge/777194227.svg)](https://zenodo.org/doi/10.5281/zenodo.10876430)
-[![DOI](https://img.shields.io/badge/Paper-PDF-red.svg)]()
-
 - This repo trains an agent with a GNN that interacts with the [RoomEnv-v2](https://github.com/humemai/room-env)
 - The HumemAI-Unified agent is an upgrade from [HumemAI](https://github.com/humemai/agent-room-env-v2-lstm)
 
