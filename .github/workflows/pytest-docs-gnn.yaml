@@ -1,0 +1,69 @@
+name: GNN Workflow
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install requirements
+        run: |
+          cd gnn
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('gnn/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+  test:
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Run tests
+        run: |
+          cd gnn
+          python -m pytest .
+
+  documentation:
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Build documentation
+        run: |
+          cd gnn
+          rm -rf _docs
+          mkdir _docs
+          python -m pdoc -d google -o _docs/ agent
+
+      - uses: actions/upload-pages-artifact@v2
+        with:
+          path: "./gnn/_docs/"
