@@ -39,3 +39,10 @@ jobs:
       - uses: actions/upload-pages-artifact@v2
         with:
           path: "./cb/_docs/"
+
+      - name: Deploy documentation
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: lstm/_docs
+          destination_dir: lstm          
