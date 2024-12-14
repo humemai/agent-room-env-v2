@@ -38,10 +38,7 @@ jobs:
           rm -rf _docs
           mkdir _docs
           python -m pdoc -d google -o _docs/ agent
-
-      - uses: actions/upload-pages-artifact@v2
-        with:
-          path: "./cb/_docs/"
+          cp _docs/index.html _docs/
 
       - name: Deploy documentation
         uses: peaceiris/actions-gh-pages@v3
