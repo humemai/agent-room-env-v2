@@ -45,7 +45,7 @@ class LongTermAgent(Agent):
             "deterministic_objects": False,
         },
         qa_policy: str = "latest",
-        explore_policy: str = "bfs",  # "random", "avoid_walls", "bfs", or "dijkstra"
+        explore_policy: str = "bfs",  # "random", "avoid_walls", "bfs", "dijkstra"
         mm_policy: str = "FIFO",
         max_long_term_memory_size: int = 100,
         num_samples_for_results: int = 10,
@@ -131,9 +131,7 @@ class LongTermAgent(Agent):
                 > self.max_long_term_memory_size
             ):
                 timestamps = self.find_unique_timestamps()
-
                 target_timestamp = min(timestamps)
-
                 memory_ids = self.find_memory_ids_by_event_time(target_timestamp)
 
                 # Randomly remove one memory from those that share the chosen timestamp
@@ -163,15 +161,15 @@ class LongTermAgent(Agent):
 
     def answer_question(self, question: tuple[str, str]) -> str:
         """
-        Answer a question based on the agent's memory using the specified QA policy,
-        and increment 'recalled' only for the one statement (exact triple + exact timeVal).
+        Answer a question based on the agent's memory using the specified QA policy, and
+        increment 'recalled' only for the one statement (exact triple + exact timeVal).
         """
 
         subject_str = f"<{question[0]}>"
         predicate_str = f"<{question[1]}>"
 
-        # Query for the statement, object, and timeVal (coalescing current_time / event_time).
-        # Each row is one reified statement.
+        # Query for the statement, object, and timeVal (coalescing current_time /
+        # event_time). Each row is one reified statement.
         query = f"""
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
             PREFIX humemai: <https://humem.ai/ontology#>
@@ -188,7 +186,7 @@ class LongTermAgent(Agent):
         """
         results = list(self.humemai.graph.query(query))
         if not results:
-            return "No answer found"
+            return None
 
         # Depending on qa_policy, pick exactly one row
         best_row = None
@@ -196,7 +194,7 @@ class LongTermAgent(Agent):
         if self.qa_policy == "latest":
             valid_rows = [r for r in results if r.timeVal is not None]
             if not valid_rows:
-                return "No answer found"
+                return None
             # Sort descending by timeVal, pick the first
             valid_rows.sort(key=lambda r: r.timeVal, reverse=True)
             best_row = valid_rows[0]
@@ -204,7 +202,7 @@ class LongTermAgent(Agent):
         elif self.qa_policy == "oldest":
             valid_rows = [r for r in results if r.timeVal is not None]
             if not valid_rows:
-                return "No answer found"
+                return None
             # Sort ascending, pick the first
             valid_rows.sort(key=lambda r: r.timeVal)
             best_row = valid_rows[0]
@@ -220,15 +218,12 @@ class LongTermAgent(Agent):
             raise ValueError("Invalid QA policy")
 
         if best_row is None:
-            return "No answer found"
+            return None
 
         best_obj = best_row.object
         best_timeVal = best_row.timeVal  # an rdflib Literal, hopefully xsd:dateTime
 
-        # If your object is a URIRef, wrap it as URIRef(). If it's a Literal, pass directly.
-        # For demonstration, let's assume best_obj is a URI.
-        # If you know it's sometimes a Literal, handle accordingly:
-        #    if isinstance(best_obj, Literal): ...
+        # If best_obj is a URIRef, we treat it as is; if it's a Literal, handle accordingly.
         best_obj_uri = URIRef(str(best_obj))
 
         self._update_qa_memory_access(
@@ -238,12 +233,16 @@ class LongTermAgent(Agent):
             time_literal=best_timeVal,
         )
 
-        # Return the chosen best object as a string (or as is)
+        # Return the chosen best object as a string
         return str(best_obj_uri)
 
     def _update_qa_memory_access(
         self, subject: URIRef, predicate: URIRef, object_: URIRef, time_literal: Literal
     ) -> None:
+        """
+        Increments the 'recalled' counter and updates 'last_accessed' for a single
+        triple in the LTM (defined by subject, predicate, object_).
+        """
         # Increment recalled
         self.humemai.increment_recalled(
             subject=subject,
@@ -263,85 +262,6 @@ class LongTermAgent(Agent):
             new_time=new_time_literal,
             lower_time_bound=time_literal,
             upper_time_bound=time_literal,
-        )
-
-    def _update_exploration_memory_access(
-        self, current_room: str, direction: str
-    ) -> None:
-        """
-        Update memory access for exploration decisions.
-
-        This function searches for a reified memory statement with:
-        - rdf:subject = current_room
-        - rdf:predicate = direction
-        and that has either an 'event_time' or 'current_time' qualifier.
-
-        It orders the results by COALESCE(event_time, current_time) in descending order.
-        If the returned statement has only a current_time (i.e. short-term memory),
-        the update is skipped. Otherwise, it uses the event_time as the timestamp for
-        updating the memory access counters.
-
-        Note: Since we're no longer using a next_room, the update will apply to the memory
-        edge (current_room, direction) regardless of its object.
-        """
-        # Query for matching reified statements with an event_time qualifier.
-        # (Assuming that the RDF graph stores simple string values for properties.)
-        query = f"""
-            PREFIX humemai: <https://humem.ai/ontology#>
-            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-
-            SELECT ?stmt ?event_time ?current_time
-            WHERE {{
-                ?stmt rdf:type rdf:Statement ;
-                    rdf:subject <{current_room}> ;
-                    rdf:predicate <{direction}> .
-                OPTIONAL {{ ?stmt humemai:event_time ?event_time }}
-                OPTIONAL {{ ?stmt humemai:current_time ?current_time }}
-                FILTER(BOUND(?event_time) || BOUND(?current_time))
-            }}
-            ORDER BY DESC(COALESCE(?event_time, ?current_time))
-            LIMIT 1
-        """
-
-        results = list(self.humemai.graph.query(query))
-        if not results:
-            raise ValueError(
-                f"No matching memory found for {current_room} -> {direction}"
-            )
-
-        best_result = results[0]
-        event_time = best_result.event_time
-        current_time = best_result.current_time
-
-        if current_time and not event_time:
-            # This is a short-term memory → skip
-            return
-
-        if not event_time:
-            raise ValueError(
-                "Expected at least event_time or current_time, but got neither."
-            )
-
-        # Update memory access information using the helper methods provided by humemai.
-        # Increment the recalled counter for the matching memory.
-        self.humemai.increment_recalled(
-            subject=URIRef(current_room),
-            predicate=URIRef(direction),
-            object_=None,
-            lower_time_bound=event_time,
-            upper_time_bound=event_time,
-        )
-
-        # Update the last_accessed qualifier with the current time.
-        # (Assumes self.current_time is a string with an ISO-formatted datetime.)
-        self.humemai.update_last_accessed(
-            subject=URIRef(current_room),
-            predicate=URIRef(direction),
-            object_=None,
-            new_time=Literal(self.current_time.isoformat(), datatype=XSD.dateTime),
-            lower_time_bound=event_time,
-            upper_time_bound=event_time,
         )
 
     # -------------------------------------------------------------------------
@@ -398,189 +318,220 @@ class LongTermAgent(Agent):
         possible_dirs = [str(row.direction).strip("<>") for row in results]
 
         if not possible_dirs:
-            raise ValueError("No valid directions available. Agent may be stuck.")
-        else:
-            # Randomly select one of the valid directions
+            raise ValueError(
+                "No valid directions found in short-term memory. "
+                "Consider using a different exploration policy."
+            )
+        return random.choice(possible_dirs)
 
-            return random.choice(possible_dirs)
-
-    # --- BFS with fallback to "least visited" ---
+    # -------------------------------------------------------------------------
+    # BFS: Return Full Path of Edges, Then Update Memory
+    # -------------------------------------------------------------------------
 
     def _explore_bfs(self) -> str:
         """
         Modified BFS strategy:
-          1. Find the first unvisited room as usual.
-          2. If no unvisited rooms remain, pick the 'least visited' room.
-          3. Return the direction for the first step on the path to that room.
+          1. BFS to find the first unvisited room, returning the full path of edges.
+          2. If no unvisited rooms remain, pick the 'least visited' room, BFS to it.
+          3. Update memory for each edge in that path, then return the direction of
+             the first edge.
         """
         current_room = self._get_agent_current_room()
-        if not current_room:
-            raise ValueError("Agent's current room not found.")
 
         visited_rooms = self._get_visited_rooms()
         adjacency = self._build_room_adjacency()
 
-        # Step 1: normal BFS to find a new (unvisited) room
-        target_room, direction = self._bfs_find_new_room(
+        # 1) BFS to find a path to some unvisited room
+        path_to_unvisited = self._bfs_find_new_room_with_path(
             current_room, adjacency, visited_rooms
         )
-        if target_room is not None:
-            # Found an unvisited node
-            self._update_exploration_memory_access(current_room, direction)
-            return direction
+        if path_to_unvisited:
+            # We found a path to an unvisited room
+            self._update_path_memory_access(path_to_unvisited)
+            # Return direction of first edge
+            return path_to_unvisited[0][1]  # (subj, direction, obj)
 
-        # Step 2: fallback if everything is visited -> pick least visited
+        # 2) If no unvisited found, pick the least visited fallback
         least_visited_room = self._pick_least_visited_room(visited_rooms, current_room)
         if not least_visited_room or least_visited_room == current_room:
+            # If everything is visited or fallback fails
             return self._explore_avoid_walls()
 
-        # Step 3: BFS path to that best visited room
-        direction = self._bfs_path_first_step(
+        # BFS path to that "least visited" room
+        path_to_known = self._bfs_path_to_specific_room(
             current_room, least_visited_room, adjacency
         )
-        self._update_exploration_memory_access(current_room, direction)
+        if path_to_known:
+            self._update_path_memory_access(path_to_known)
+            return path_to_known[0][1]  # first edge direction
+        else:
+            return self._explore_avoid_walls()
 
-        return direction
-
-    def _bfs_find_new_room(
+    def _bfs_find_new_room_with_path(
         self,
         start_room: str,
         adjacency: dict[str, list[tuple[str, str]]],
         visited_rooms: set[str],
-    ) -> tuple[str | None, str]:
+    ) -> list[tuple[str, str, str]] | None:
         """
-        BFS from start_room to find the first room not in visited_rooms.
-        Returns (target_room, direction_of_first_step) or (None, None) if none found.
+        BFS from start_room to find the first unvisited room. Returns the list of edges
+        (subjectRoom, direction, objectRoom) or None if not found.
         """
-        if start_room not in adjacency:
-            return (None, None)
-
-        parents: dict[str, tuple[str | None, str | None]] = {start_room: (None, None)}
+        parents = {start_room: None}  # room -> (parentRoom, directionUsed)
         queue = deque([start_room])
+
         while queue:
-            target_room = queue.popleft()
-            # If we reach a room not in visited_rooms (and not the start), we stop
-            if target_room not in visited_rooms and target_room != start_room:
-                direction = self._get_first_step(start_room, target_room, parents)
-                return (target_room, direction)
+            current = queue.popleft()
+            # If we found an unvisited room (that's not the start)
+            if current not in visited_rooms and current != start_room:
+                # reconstruct edges
+                return self._bfs_reconstruct_path(parents, start_room, current)
 
-            for dir_str, neighbor in adjacency.get(target_room, []):
-                if neighbor not in parents:  # unvisited in BFS sense
-                    parents[neighbor] = (target_room, dir_str)
+            # expand neighbors
+            for direction, neighbor in adjacency.get(current, []):
+                if neighbor not in parents:
+                    parents[neighbor] = (current, direction)
                     queue.append(neighbor)
-        return (None, None)
 
-    def _bfs_path_first_step(
+        return None
+
+    def _bfs_path_to_specific_room(
         self,
         start_room: str,
         goal_room: str,
         adjacency: dict[str, list[tuple[str, str]]],
-    ) -> str:
+    ) -> list[tuple[str, str, str]] | None:
         """
-        BFS from start_room to goal_room. Returns the direction for the first step.
-        If BFS fails or there's no path, defaults to explore_avoid_walls.
+        BFS from start_room to goal_room, returning a list of edges (subjectRoom,
+        direction, objectRoom). Returns None if no path.
         """
-        # If already in goal room, now fallback to explore_avoid_walls
         if start_room == goal_room:
-            return self._explore_avoid_walls()
+            return []
 
-        parents: dict[str, tuple[str | None, str | None]] = {start_room: (None, None)}
+        parents = {start_room: None}
         queue = deque([start_room])
 
         while queue:
             current = queue.popleft()
             if current == goal_room:
-                return self._get_first_step(start_room, goal_room, parents)
+                return self._bfs_reconstruct_path(parents, start_room, goal_room)
 
-            for dir_str, neighbor in adjacency.get(current, []):
+            for direction, neighbor in adjacency.get(current, []):
                 if neighbor not in parents:
-                    parents[neighbor] = (current, dir_str)
+                    parents[neighbor] = (current, direction)
                     queue.append(neighbor)
 
-        # Fall back to explore_avoid_walls
-        return self._explore_avoid_walls()
+        return None
 
-    # --- Dijkstra with fallback to "least visited" ---
+    def _bfs_reconstruct_path(
+        self, parents: dict[str, tuple[str | None, str | None]], start: str, goal: str
+    ) -> list[tuple[str, str, str]]:
+        """
+        Reconstruct BFS path from start->...->goal as a list of edges
+        (subjectRoom, direction, objectRoom).
+        """
+        edges = []
+        current = goal
+        while current != start and current in parents:
+            prev_dir = parents[current]
+            if prev_dir is None:
+                break
+            (prev_room, direction) = prev_dir
+            if prev_room is None:
+                break
+            edges.append((prev_room, direction, current))
+            current = prev_room
+        edges.reverse()
+        return edges
+
+    # -------------------------------------------------------------------------
+    # Dijkstra: Return Full Path, Then Update Memory
+    # -------------------------------------------------------------------------
 
     def _explore_dijkstra(self) -> str:
         """
         Modified Dijkstra strategy:
-          1. Attempt to find an *unvisited* room with the lowest total cost.
-          2. If no unvisited rooms remain, pick the least visited room.
-          3. Return the direction for the first step of that path.
+          1. Attempt to find a path to an *unvisited* room with minimal cost.
+          2. If no unvisited remains, pick the least visited room, path to it.
+          3. Update memory for each edge in that path, then return the first direction.
         """
         current_room = self._get_agent_current_room()
-        if not current_room:
-            raise ValueError("Agent's current room not found.")
 
         visited_rooms = self._get_visited_rooms()
         adjacency = self._build_room_adjacency_with_weights(visited_rooms)
 
-        # 1. Try to find best unvisited room
-        best_unvisited_room, direction = self._dijkstra_find_best_unvisited_room(
-            current_room, adjacency
+        # 1) Find the best unvisited room, get full path
+        path_to_unvisited = self._dijkstra_find_best_unvisited_room_with_path(
+            current_room, adjacency, visited_rooms
         )
+        if path_to_unvisited:
+            self._update_path_memory_access(path_to_unvisited)
+            return path_to_unvisited[0][1]  # direction of first edge
 
-        if best_unvisited_room is not None:
-            # Found an unvisited node
-            self._update_exploration_memory_access(current_room, direction)
-            return direction
-
-        # 2. Otherwise, pick the least visited fallback
-        target_visited_room = self._pick_least_visited_room(visited_rooms, current_room)
-        if not target_visited_room or target_visited_room == current_room:
+        # 2) No unvisited left, fallback to least visited
+        least_visited_room = self._pick_least_visited_room(visited_rooms, current_room)
+        if not least_visited_room or least_visited_room == current_room:
             return self._explore_avoid_walls()
 
-        # 3. Dijkstra path from current_room to target_visited_room
-        direction = self._dijkstra_path_first_step(
-            current_room, target_visited_room, adjacency
+        # 3) Dijkstra to that known room
+        path_to_known = self._dijkstra_path_to_specific_room(
+            current_room, least_visited_room, adjacency
         )
-        self._update_exploration_memory_access(current_room, direction)
+        if path_to_known:
+            self._update_path_memory_access(path_to_known)
+            return path_to_known[0][1]
+        else:
+            return self._explore_avoid_walls()
 
-        return direction
-
-    def _dijkstra_find_best_unvisited_room(
-        self, start_room: str, adjacency: dict[str, list[tuple[str, str, float]]]
-    ) -> tuple[str, str]:
+    def _dijkstra_find_best_unvisited_room_with_path(
+        self,
+        start_room: str,
+        adjacency: dict[str, list[tuple[str, str, float]]],
+        visited_rooms: set[str],
+    ) -> list[tuple[str, str, str]] | None:
         """
-        Runs Dijkstra from start_room, then picks the unvisited room with the minimal
-        cost. Returns (best_room, direction_for_first_step). If no unvisited room is
-        found, returns (None, None).
+        Runs Dijkstra from start_room, among all reachable rooms pick the FIRST
+        unvisited with minimal cost. Returns the full path (list of edges) or None if
+        none is found.
         """
         best_cost, parent = self._dijkstra_min_cost_path(start_room, adjacency)
-        visited = self._get_visited_rooms()
 
-        # Among all rooms, pick the unvisited (and not the start) with minimal cost
-        candidates = [
-            (room, cost)
-            for room, cost in best_cost.items()
-            if room != start_room and room not in visited and cost != float("inf")
-        ]
+        # among all reachable rooms, find unvisited with minimal cost
+        candidates = []
+        for room, cost_val in best_cost.items():
+            if (
+                (room not in visited_rooms)
+                and (room != start_room)
+                and (cost_val < float("inf"))
+            ):
+                candidates.append((room, cost_val))
+
         if not candidates:
-            return (None, None)
+            return None
 
-        best_room, _ = min(candidates, key=lambda x: x[1])
-        direction = self._dijkstra_reconstruct_first_step(start_room, best_room, parent)
-        return (best_room, direction)
+        # pick the minimal cost
+        candidates.sort(key=lambda x: x[1])
+        best_room, _ = candidates[0]
+        return self._dijkstra_reconstruct_full_path(parent, start_room, best_room)
 
-    def _dijkstra_path_first_step(
+    def _dijkstra_path_to_specific_room(
         self,
         start_room: str,
         goal_room: str,
         adjacency: dict[str, list[tuple[str, str, float]]],
-    ) -> str:
+    ) -> list[tuple[str, str, str]] | None:
         """
-        Run Dijkstra from start_room to goal_room, then return the first step's direction.
-        If no path is found or start_room == goal_room, defaults to explore_avoid_walls.
+        Run Dijkstra from start_room to goal_room. Returns full path (list of edges) or
+        None if no path is found.
         """
         if start_room == goal_room:
-            return self._explore_avoid_walls()
+            return []
 
         best_cost, parent = self._dijkstra_min_cost_path(start_room, adjacency)
         if best_cost.get(goal_room, float("inf")) == float("inf"):
-            return self._explore_avoid_walls()
+            return None
 
-        return self._dijkstra_reconstruct_first_step(start_room, goal_room, parent)
+        return self._dijkstra_reconstruct_full_path(parent, start_room, goal_room)
 
     def _dijkstra_min_cost_path(
         self, start_room: str, adjacency: dict[str, list[tuple[str, str, float]]]
@@ -588,12 +539,12 @@ class LongTermAgent(Agent):
         """
         Standard Dijkstra from start_room, returning:
           - best_cost[room]: minimal cumulative cost from start_room to room
-          - parent[room] = (previous_room, direction)
+          - parent[room]: (previous_room, direction_used)
         """
-        best_cost: dict[str, float] = {}
-        parent: dict[str, tuple[str, str]] = {}
+        best_cost = {}
+        parent = {}
 
-        # Initialize costs
+        # initialize
         for room in adjacency:
             best_cost[room] = float("inf")
         best_cost[start_room] = 0.0
@@ -604,35 +555,30 @@ class LongTermAgent(Agent):
             if current_cost > best_cost[current_room]:
                 continue
 
-            for dir_str, neighbor, edge_cost in adjacency.get(current_room, []):
+            for direction, neighbor, edge_cost in adjacency.get(current_room, []):
                 candidate = current_cost + edge_cost
                 if candidate < best_cost.get(neighbor, float("inf")):
                     best_cost[neighbor] = candidate
-                    parent[neighbor] = (current_room, dir_str)
+                    parent[neighbor] = (current_room, direction)
                     heapq.heappush(pq, (candidate, neighbor))
 
         return best_cost, parent
 
-    def _dijkstra_reconstruct_first_step(
-        self, start_room: str, goal_room: str, parent: dict[str, tuple[str, str]]
-    ) -> str:
+    def _dijkstra_reconstruct_full_path(
+        self, parent: dict[str, tuple[str, str]], start_room: str, goal_room: str
+    ) -> list[tuple[str, str, str]]:
         """
-        Backtrack from goal_room to start_room using 'parent' dictionary,
-        then return the direction from start_room to the second room in that path.
+        Reconstruct the path from start_room to goal_room using the 'parent' dict
+        from Dijkstra. Returns a list of edges (subjRoom, direction, objRoom).
         """
-        path = []
+        edges = []
         current = goal_room
-        while current in parent and current != start_room:
-            prev_room, dir_used = parent[current]
-            path.append((prev_room, current, dir_used))
+        while current != start_room and current in parent:
+            prev_room, direction = parent[current]
+            edges.append((prev_room, direction, current))
             current = prev_room
-
-        # If we never made it back to start_room
-        if not path or current != start_room:
-            return self._explore_avoid_walls()
-
-        # The last item in path is (start_room, second_room, direction_out_of_start_room).
-        return path[-1][2] or self._explore_avoid_walls()
+        edges.reverse()
+        return edges
 
     # -------------------------------------------------------------------------
     # Shared BFS/Dijkstra Helpers
@@ -659,11 +605,13 @@ class LongTermAgent(Agent):
         results = self.humemai.graph.query(query)
         for row in results:
             return str(row.room)
-        return None
+
+        # If we reach here, no current room was found
+        raise ValueError("Agent's current room not found in short-term memory.")
 
     def _build_room_adjacency(self) -> dict[str, list[tuple[str, str]]]:
         """
-        Build an adjacency mapping: for each roomX, list of (direction, roomY), skipping
+        Build an adjacency mapping: for each roomX, list of (direction, roomY). Skips
         edges that lead to <wall>.
         """
         adjacency = {}
@@ -682,9 +630,8 @@ class LongTermAgent(Agent):
         results = self.humemai.graph.query(query)
         for row in results:
             roomX = str(row.roomX)
-            dir_str = row.dir.split("/")[-1]  # e.g. <north> -> "north"
+            dir_str = row.dir.split("/")[-1]  # <north> -> 'north'
             roomY = str(row.roomY)
-            # skip if leads to wall
             if roomY.endswith("wall"):
                 continue
             if roomX not in adjacency:
@@ -696,10 +643,10 @@ class LongTermAgent(Agent):
         self, visited_rooms: set[str]
     ) -> dict[str, list[tuple[str, str, float]]]:
         """
-        Build weighted adjacency: roomX -> [(direction, roomY, cost)]. For each edge,
-        cost = 1/(1 + count_objs_in_roomY).
+        Build weighted adjacency: roomX -> [(direction, roomY, cost)].
+        cost = 1 / (1 + count_interesting_objects_in roomY).
         """
-        adjacency: dict[str, list[tuple[str, str, float]]] = {}
+        adjacency = {}
         query = """
             PREFIX humemai: <https://humem.ai/ontology#>
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -720,7 +667,7 @@ class LongTermAgent(Agent):
             if roomY.endswith("wall"):
                 continue
 
-            # Simple cost: 1 / (1 + number_of_interesting_objects)
+            # cost function: 1 / (1 + # of interesting objects in roomY)
             count_objs = self._count_interesting_objects_in_room(roomY)
             cost = 1.0 / (1.0 + count_objs)
 
@@ -732,8 +679,8 @@ class LongTermAgent(Agent):
 
     def _count_interesting_objects_in_room(self, room: str) -> int:
         """
-        Count "interesting" objects in a room. We define objects as interesting if their
-        URI contains one of the prefixes: "sat_", "ind_", or "dep_".
+        Count "interesting" objects in a room. We define them as URIs containing
+        'sat_', 'ind_', or 'dep_'.
         """
         prefixes = ("sat_", "ind_", "dep_")
         query = f"""
@@ -786,25 +733,24 @@ class LongTermAgent(Agent):
         self, visited_rooms: set[str], current_room: str
     ) -> str | None:
         """
-        Among *visited* rooms, pick the one with the minimal visit count. Exclude the
-        agent's current room from the candidates. Returns the chosen room's URI or None
-        if no candidate found.
+        Among visited_rooms, pick the one with the minimal visit count. Exclude
+        current_room from the candidates. Returns the chosen room's URI or None if none.
         """
         room_visit_counts = self._get_room_visit_counts()
 
-        # Candidate rooms: visited, but not the agent's current
-        candidate_rooms = [r for r in visited_rooms if r != current_room]
-        if not candidate_rooms:
+        # Candidate rooms: visited, but not agent's current
+        candidates = [r for r in visited_rooms if r != current_room]
+        if not candidates:
             return None
 
-        # Sort by ascending visit count, then pick the first
-        candidate_rooms.sort(key=lambda r: room_visit_counts.get(r, 0))
-        return candidate_rooms[0]
+        # Sort by ascending visit count, pick the first
+        candidates.sort(key=lambda r: room_visit_counts.get(r, 0))
+        return candidates[0]
 
     def _get_room_visit_counts(self) -> dict[str, int]:
         """
-        Returns a dict {roomURI: visit_count}, counting all times that (agent,
-        at_location, roomURI) appears (across any event_time).
+        Returns {roomURI: visit_count} for all times the agent was at_location roomURI
+        in long-term memory (with event_time).
         """
         query = """
             PREFIX humemai: <https://humem.ai/ontology#>
@@ -828,32 +774,92 @@ class LongTermAgent(Agent):
         return room_visits
 
     # -------------------------------------------------------------------------
-    # Generic Helper for BFS Path Reconstruction
+    # Updating Memory Access for BFS/Dijkstra Paths
     # -------------------------------------------------------------------------
 
-    def _get_first_step(
-        self,
-        start_room: str,
-        goal_room: str,
-        parents: dict[str, tuple[str | None, str | None]],
-    ) -> str:
+    def _update_path_memory_access(self, edges: list[tuple[str, str, str]]) -> None:
         """
-        Backtrack from goal_room to start_room using the BFS 'parents' mapping, then
-        return the direction used for the initial move out of start_room.
+        For each edge (roomX, direction, roomY) in the BFS / Dijkstra path,
+        update 'recalled' and 'last_accessed' for the *latest* statement in LTM
+        that has (subject=roomX, predicate=direction, object=roomY).
+        Short-term statements (with only current_time, no event_time) are skipped.
         """
-        path: list[tuple[str | None, str, str | None]] = []
-        current = goal_room
-        while current != start_room:
-            prev_room, dir_to_current = parents[current]
-            if prev_room is None:
-                break
-            path.append((prev_room, current, dir_to_current))
-            current = prev_room
-        if not path:
-            return self._explore_avoid_walls()
+        print(edges)
+        for subj, pred, obj in edges:
+            self._update_exploration_edge_memory(subj, pred, obj)
 
-        # The last element in path is the first step from start_room
-        return path[-1][2] or self._explore_avoid_walls()
+    def _update_exploration_edge_memory(
+        self, subject: str, predicate: str, object_: str
+    ) -> None:
+        """
+        Locate the *latest* memory statement in LTM for (subject, predicate, object).
+        That means we pick the statement with the largest timeVal among those that have
+        an event_time or known_since (i.e. not purely short-term). If only short-term
+        memory is found or none is found, we skip.
+        """
+
+        query = f"""
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX humemai: <https://humem.ai/ontology#>
+            SELECT ?stmt ?ct ?et ?ks (COALESCE(?ct, ?et, ?ks) AS ?timeVal)
+            WHERE {{
+            ?stmt rdf:type rdf:Statement ;
+                    rdf:subject <{subject}> ;
+                    rdf:predicate <{predicate}> ;
+                    rdf:object <{object_}> .
+            OPTIONAL {{ ?stmt humemai:current_time ?ct. }}
+            OPTIONAL {{ ?stmt humemai:event_time ?et. }}
+            OPTIONAL {{ ?stmt humemai:known_since ?ks. }}
+            }}
+            ORDER BY DESC(?timeVal)
+            LIMIT 1
+        """
+
+        results = list(self.humemai.graph.query(query))
+        if not results:
+            raise ValueError(
+                f"No statement found for ({subject}, {predicate}, {object_})."
+            )
+
+        row = results[0]
+        time_val = row.timeVal  # This is COALESCE(?ct, ?et, ?ks)
+        et_val = row.et
+        ks_val = row.ks
+        # If it's purely short-term, that means ?ct is set, but ?et and ?ks are both
+        # None. So we check that condition and skip.
+        if et_val is None and ks_val is None:
+            assert row.ct is not None
+            # This means we have only ?ct => short-term memory => skip
+            return
+
+        if time_val is None:
+            raise ValueError(
+                f"No valid time found for ({subject}, {predicate}, {object_})."
+            )
+
+        # If we're here, we have an LTM statement with either event_time or known_since
+        # => it’s safe to increment recalled and update last_accessed.
+
+        self.humemai.increment_recalled(
+            subject=URIRef(subject),
+            predicate=URIRef(predicate),
+            object_=URIRef(object_),
+            lower_time_bound=time_val,
+            upper_time_bound=time_val,
+        )
+
+        # Update last_accessed with the agent's current time
+        new_time_literal = Literal(
+            self.current_time.isoformat(timespec="seconds"), datatype=XSD.dateTime
+        )
+        self.humemai.update_last_accessed(
+            subject=URIRef(subject),
+            predicate=URIRef(predicate),
+            object_=URIRef(object_),
+            new_time=new_time_literal,
+            lower_time_bound=time_val,
+            upper_time_bound=time_val,
+        )
 
     # -------------------------------------------------------------------------
     # Env Testing Example
