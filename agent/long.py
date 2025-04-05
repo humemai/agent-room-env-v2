@@ -1,6 +1,6 @@
 """This module defines the LongTermAgent class which uses both short-term and
-long-term memory to store and retrieve observations, along with QA, exploration,
-and memory management policies.
+long-term memory to store and retrieve observations, along with QA, exploration, and
+memory management policies.
 """
 
 from __future__ import annotations
@@ -46,9 +46,10 @@ class LongTermAgent(Agent):
         },
         qa_policy: str = "latest",
         explore_policy: str = "bfs",  # "random", "avoid_walls", "bfs", "dijkstra"
-        mm_policy: str = "FIFO",
+        mm_policy: str = "FIFO",  # "FIFO", "LRU", "LFU", "LFU+LRU", "random", "belady"
         max_long_term_memory_size: int = 100,
         num_samples_for_results: int = 10,
+        save_results: bool = True,
         default_root_dir: str = "./training-results/",
     ) -> None:
         """
@@ -63,6 +64,19 @@ class LongTermAgent(Agent):
         self.qa_policy = qa_policy
         self.explore_policy = explore_policy
         self.mm_policy = mm_policy
+        if self.mm_policy == "belady":
+            assert env_config["deterministic_objects"], (
+                "Belady's algorithm requires deterministic objects. "
+                "Set 'deterministic_objects' to True in env_config."
+            )
+            assert env_config["randomize_observations"] == "none", (
+                "Belady's algorithm requires deterministic observations. "
+                "Set 'randomize_observations' to 'none' in env_config."
+            )
+            # Initialize tracking structures for Belady's algorithm
+            self.memory_access_log = {}  # {step: set(memory_ids)}
+            self.next_access_lookup = {}  # {memory_id: [future access steps]}
+
         self.max_long_term_memory_size = max_long_term_memory_size
 
         # HumemAI setup
@@ -73,6 +87,91 @@ class LongTermAgent(Agent):
     # -------------------------------------------------------------------------
     # Memory Management
     # -------------------------------------------------------------------------
+
+    def manage_memory(self, observations: list[list[str]], step: int) -> None:
+        """
+        Manage memory by:
+          1) Move all short-term memories to episodic.
+          2) Enforce memory management until the total meets the size limit.
+          3) Clear short-term memory.
+          4) Add new short-term observations.
+        """
+
+        # 1) Move all short-term => episodic (so they can be pruned)
+        self.humemai.move_all_short_term_to_episodic()
+
+        # 2) While we exceed memory limits, prune exactly one statement
+        while (
+            self.humemai.get_long_term_memory_count() > self.max_long_term_memory_size
+        ):
+            # Depending on mm_policy, choose one statement to remove
+            if self.mm_policy.lower() == "fifo":
+                # same as before
+                mem_id_to_delete = self._pick_fifo_victim()
+
+            elif self.mm_policy.lower() == "lru":
+                mem_id_to_delete = self._pick_lru_victim()
+
+            elif self.mm_policy.lower() == "lfu":
+                mem_id_to_delete = self._pick_lfu_victim()
+
+            elif self.mm_policy.lower() in ["lfu+lru", "lru+lfu"]:
+                mem_id_to_delete = self._pick_lfu_lru_victim()
+
+            elif self.mm_policy.lower() == "random":
+                mem_id_to_delete = self._pick_random_victim()
+
+            elif self.mm_policy.lower() == "belady":
+                mem_id_to_delete = self._pick_belady_victim()
+
+            else:
+                raise NotImplementedError(
+                    f"Memory management policy '{self.mm_policy}' not implemented."
+                )
+
+            if mem_id_to_delete is None:
+                # If we somehow have no candidate, break to avoid infinite loop
+                raise ValueError(
+                    "No memory ID found for deletion. Check your memory management policy."
+                )
+            # Remove that statement from memory
+            self.humemai.delete_memory(Literal(mem_id_to_delete))
+
+        # 3) Clear all short-term memories
+        self.humemai.clear_short_term_memories()
+
+        # 4) Add the new observations to short-term memory
+        triples = [[URIRef(item) for item in obs] for obs in observations]
+        self.current_time = self.base_date + timedelta(days=step)
+        qualifiers = {
+            self.humemai_ns.current_time: Literal(
+                self.current_time.isoformat(timespec="seconds"),
+                datatype=XSD.dateTime,
+            )
+        }
+        self.humemai.add_short_term_memory(triples=triples, qualifiers=qualifiers)
+
+    # ------------------------ FIFO ------------------------
+
+    def _pick_fifo_victim(self) -> Optional[int]:
+        """
+        For FIFO, we remove the statement with the earliest humemai:event_time. If
+        multiple share the same earliest time, pick one at random.
+        """
+        timestamps = self.find_unique_timestamps()
+        if not timestamps:
+            raise ValueError(
+                "No timestamps found in long-term memory. Cannot pick FIFO victim."
+            )
+        # earliest
+        target_timestamp = min(timestamps)
+        memory_ids = self.find_memory_ids_by_event_time(target_timestamp)
+        if not memory_ids:
+            raise ValueError(
+                "No memory IDs found for the earliest timestamp. Cannot pick FIFO victim."
+            )
+        # random tie-break
+        return random.choice(memory_ids)
 
     def find_unique_timestamps(self) -> list[str]:
         """
@@ -114,46 +213,274 @@ class LongTermAgent(Agent):
         results = self.humemai.graph.query(query)
         return [int(row.memoryID) for row in results]
 
-    def manage_memory(self, observations: list[list[str]], step: int) -> None:
+    # ------------------------ LRU ------------------------
+
+    def _pick_lru_victim(self) -> Optional[int]:
         """
-        Manage memory by:
-          1) Converting short-term memories to episodic.
-          2) Enforcing a memory management policy until the total meets the size limit.
-          3) Clearing short-term memory and adding new observations.
+        For LRU, remove the statement with the smallest (oldest) humemai:last_accessed.
         """
-
-        if self.mm_policy == "FIFO":
-            self.humemai.move_all_short_term_to_episodic()
-
-            # Enforce memory management until we meet the size limit
-            while (
-                self.humemai.get_long_term_memory_count()
-                > self.max_long_term_memory_size
-            ):
-                timestamps = self.find_unique_timestamps()
-                target_timestamp = min(timestamps)
-                memory_ids = self.find_memory_ids_by_event_time(target_timestamp)
-
-                # Randomly remove one memory from those that share the chosen timestamp
-                mem_id_to_delete = random.choice(memory_ids)
-                self.humemai.delete_memory(Literal(mem_id_to_delete))
-
-            # Clear short-term and add new observations
-            self.humemai.clear_short_term_memories()
-            triples = [[URIRef(item) for item in obs] for obs in observations]
-            self.current_time = self.base_date + timedelta(days=step)
-            qualifiers = {
-                self.humemai_ns.current_time: Literal(
-                    self.current_time.isoformat(timespec="seconds"),
-                    datatype=XSD.dateTime,
-                )
+        # Query all statements in long-term memory with their memoryID & last_accessed
+        # We only consider statements that have humemai:event_time => truly in LTM
+        query = """
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX humemai: <https://humem.ai/ontology#>
+            SELECT ?memoryID ?la
+            WHERE {
+              ?stmt rdf:type rdf:Statement ;
+                    humemai:memoryID ?memoryID ;
+                    humemai:event_time ?et .
+              OPTIONAL { ?stmt humemai:last_accessed ?la. }
             }
-            self.humemai.add_short_term_memory(triples=triples, qualifiers=qualifiers)
-
-        else:
-            raise NotImplementedError(
-                f"Memory management policy '{self.mm_policy}' not implemented."
+        """
+        results = list(self.humemai.graph.query(query))
+        if not results:
+            raise ValueError(
+                "No statements found in long-term memory. Cannot pick LRU victim."
             )
+
+        # We pick the row with the earliest last_accessed. If last_accessed is missing,
+        # treat it as extremely old so that it gets removed first.
+        best_mem_id = None
+        oldest_dt = datetime.max
+
+        for row in results:
+            mem_id = int(row.memoryID)
+            la_literal = row.la
+            if la_literal is None:
+                # no last_accessed => treat as oldest
+                return mem_id
+            try:
+                la_time = datetime.fromisoformat(str(la_literal))
+            except ValueError:
+                # if it fails to parse, remove it
+                return mem_id
+
+            # track the minimum last_accessed
+            if la_time < oldest_dt:
+                oldest_dt = la_time
+                best_mem_id = mem_id
+
+        return best_mem_id
+
+    # ------------------------ LFU ------------------------
+
+    def _pick_lfu_victim(self) -> Optional[int]:
+        """
+        For LFU, remove the statement with the smallest humemai:recalled. If
+        humemai:recalled is missing, treat it as zero => victim candidate.
+        """
+        query = """
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX humemai: <https://humem.ai/ontology#>
+            SELECT ?memoryID ?rec
+            WHERE {
+              ?stmt rdf:type rdf:Statement ;
+                    humemai:memoryID ?memoryID ;
+                    humemai:event_time ?et .
+              OPTIONAL { ?stmt humemai:recalled ?rec. }
+            }
+        """
+        results = list(self.humemai.graph.query(query))
+        if not results:
+            raise ValueError(
+                "No statements found in long-term memory. Cannot pick LFU victim."
+            )
+
+        best_mem_id = None
+        best_recall = None  # we want the smallest, so track "lowest so far"
+
+        for row in results:
+            mem_id = int(row.memoryID)
+            rec_count = row.rec
+            if rec_count is None:
+                # treat missing "recalled" as zero
+                return mem_id
+            try:
+                rec_count = int(rec_count)
+            except ValueError:
+                # can't parse => treat as zero
+                return mem_id
+
+            if best_recall is None or rec_count < best_recall:
+                best_recall = rec_count
+                best_mem_id = mem_id
+
+        return best_mem_id
+
+    # ------------------------ LFU+LRU ------------------------
+
+    def _pick_lfu_lru_victim(self) -> Optional[int]:
+        """
+        For the hybrid, remove the statement with the smallest score:
+            score = recalled / delta_days
+        where delta_days = (current_time - last_accessed) in days.
+        If last_accessed is missing, or recalled is missing, treat them in ways
+        that bias removal:
+        - missing last_accessed => treat as a large old date => big delta => higher denominator => smaller score
+        - missing recalled => treat as 0 => zero numerator => score=0 => remove quickly
+
+        We remove whichever statement has the lowest score.
+        """
+
+        query = """
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX humemai: <https://humem.ai/ontology#>
+            SELECT ?memoryID ?la ?rec
+            WHERE {
+            ?stmt rdf:type rdf:Statement ;
+                    humemai:memoryID ?memoryID ;
+                    humemai:event_time ?et .
+            OPTIONAL { ?stmt humemai:last_accessed ?la. }
+            OPTIONAL { ?stmt humemai:recalled ?rec. }
+            }
+        """
+        results = list(self.humemai.graph.query(query))
+        if not results:
+            raise ValueError(
+                "No statements found in long-term memory. Cannot pick LFU+LRU victim."
+            )
+
+        best_mem_id = None
+        best_score = None  # track the "lowest" ratio => victim
+
+        for row in results:
+            mem_id = int(row.memoryID)
+            la_literal = row.la
+            rec_count = row.rec
+
+            # If recalled is missing => treat as zero
+            if rec_count is None:
+                rec_count = 0
+            else:
+                try:
+                    rec_count = int(rec_count)
+                except ValueError:
+                    rec_count = 0
+
+            # If last_accessed is missing => treat as far in the past => large delta
+            if la_literal is None:
+                la_time = self.base_date - timedelta(days=3650)
+            else:
+                try:
+                    la_time = datetime.fromisoformat(str(la_literal))
+                except ValueError:
+                    la_time = self.base_date - timedelta(days=3650)
+
+            # Compute delta_time in *days* instead of seconds
+            # Option 1: purely integer days (truncates fractional days):
+            #   dt_days = (self.current_time.date() - la_time.date()).days
+            #
+            # Option 2: keep fractional days using total_seconds() / 86400:
+            dt_days = (self.current_time - la_time).total_seconds() / 86400.0
+            if dt_days < 1.0:
+                dt_days = 1.0  # avoid division by zero or sub-day illusions
+
+            score = rec_count / dt_days  # "lowest" => remove
+            if best_score is None or score < best_score:
+                best_score = score
+                best_mem_id = mem_id
+
+        return best_mem_id
+
+    # ------------------------ random ------------------------
+
+    def _pick_random_victim(self) -> Optional[int]:
+        """
+        For random victim selection, simply pick a random statement from long-term memory.
+        We only consider statements that have humemai:event_time (truly in LTM).
+        """
+        # Query all statements in long-term memory with their memoryID
+        query = """
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX humemai: <https://humem.ai/ontology#>
+            SELECT ?memoryID
+            WHERE {
+              ?stmt rdf:type rdf:Statement ;
+                    humemai:memoryID ?memoryID ;
+                    humemai:event_time ?et .
+            }
+        """
+        results = list(self.humemai.graph.query(query))
+        if not results:
+            raise ValueError(
+                "No statements found in long-term memory. Cannot pick random victim."
+            )
+
+        # Randomly select one memory ID
+        random_row = random.choice(results)
+        return int(random_row.memoryID)
+
+    # ------------------------ Bélády ------------------------
+
+    def _pick_belady_victim(self) -> Optional[int]:
+        """Select memory that won't be needed for longest time in future"""
+        # Get all memory IDs in LTM
+        query = """
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX humemai: <https://humem.ai/ontology#>
+            SELECT ?memoryID
+            WHERE {
+              ?stmt rdf:type rdf:Statement ;
+                    humemai:memoryID ?memoryID ;
+                    humemai:event_time ?et .
+            }
+        """
+        results = list(self.humemai.graph.query(query))
+        if not results:
+            raise ValueError("No statements in long-term memory for Bélády selection")
+
+        memory_ids = [int(row.memoryID) for row in results]
+
+        # Add debugging info
+        print(f"Belady selection: Found {len(memory_ids)} memories in LTM")
+
+        # Count how many precomputed entries are still valid
+        valid_precomputed = sum(1 for m in memory_ids if m in self.next_access_lookup)
+        print(
+            f"Belady selection: {valid_precomputed}/{len(memory_ids)} have precomputed data"
+        )
+
+        # Find next access time for each memory
+        never_accessed_again = []
+        next_access = {}
+
+        for memory_id in memory_ids:
+            if memory_id not in self.next_access_lookup:
+                # Memory will never be accessed again
+                never_accessed_again.append(memory_id)
+                continue
+
+            # Get future accesses only
+            future_steps = [
+                step
+                for step in self.next_access_lookup[memory_id]
+                if step > self.current_step
+            ]
+
+            if not future_steps:
+                # No future accesses
+                never_accessed_again.append(memory_id)
+            else:
+                # Store next access time
+                next_access[memory_id] = min(future_steps)
+
+        # First priority: memories never accessed again
+        if never_accessed_again:
+            victim = random.choice(never_accessed_again)
+            print(f"Belady selection: Memory {victim} never accessed again")
+            return victim
+
+        # Second priority: memory with furthest next access
+        if next_access:
+            victim = max(next_access.items(), key=lambda x: x[1])[0]
+            print(
+                f"Belady selection: Memory {victim} next accessed at step {next_access[victim]}"
+            )
+            return victim
+
+        # Fallback to LRU if nothing else works
+        print("Belady selection: Falling back to LRU")
+        return self._pick_lru_victim()
 
     # -------------------------------------------------------------------------
     # QA Policy
@@ -346,7 +673,6 @@ class LongTermAgent(Agent):
             current_room, adjacency, visited_rooms
         )
         if path_to_unvisited:
-            # We found a path to an unvisited room
             self._update_path_memory_access(path_to_unvisited)
             # Return direction of first edge
             return path_to_unvisited[0][1]  # (subj, direction, obj)
@@ -644,7 +970,7 @@ class LongTermAgent(Agent):
     ) -> dict[str, list[tuple[str, str, float]]]:
         """
         Build weighted adjacency: roomX -> [(direction, roomY, cost)].
-        cost = 1 / (1 + count_interesting_objects_in roomY).
+        cost = 1 / (1 + count_interesting_objects_in(roomY)).
         """
         adjacency = {}
         query = """
@@ -784,7 +1110,6 @@ class LongTermAgent(Agent):
         that has (subject=roomX, predicate=direction, object=roomY).
         Short-term statements (with only current_time, no event_time) are skipped.
         """
-        print(edges)
         for subj, pred, obj in edges:
             self._update_exploration_edge_memory(subj, pred, obj)
 
@@ -825,21 +1150,17 @@ class LongTermAgent(Agent):
         time_val = row.timeVal  # This is COALESCE(?ct, ?et, ?ks)
         et_val = row.et
         ks_val = row.ks
-        # If it's purely short-term, that means ?ct is set, but ?et and ?ks are both
-        # None. So we check that condition and skip.
+        # If it's purely short-term, that means ?ct is set, but ?et and ?ks are both None
         if et_val is None and ks_val is None:
             assert row.ct is not None
             # This means we have only ?ct => short-term memory => skip
             return
-
         if time_val is None:
             raise ValueError(
                 f"No valid time found for ({subject}, {predicate}, {object_})."
             )
 
-        # If we're here, we have an LTM statement with either event_time or known_since
-        # => it’s safe to increment recalled and update last_accessed.
-
+        # If we are here, it's LTM => safe to update
         self.humemai.increment_recalled(
             subject=URIRef(subject),
             predicate=URIRef(predicate),
@@ -870,6 +1191,10 @@ class LongTermAgent(Agent):
         Execute a single test episode in the environment, returning total score and step
         count.
         """
+        # For Belady's algorithm, precompute future memory accesses
+        if self.mm_policy.lower() == "belady":
+            self.precompute_future_memory_accesses()
+
         score = 0.0
         step = 0
         self.humemai.reset()
@@ -887,3 +1212,154 @@ class LongTermAgent(Agent):
                 break
 
         return score, step
+
+    def precompute_future_memory_accesses(self):
+        """Run a simulation episode to record all memory accesses"""
+        print("Precomputing future memory accesses for Bélády's algorithm...")
+
+        # Record the simulation start time
+        start_time = datetime.now()
+
+        # Clone the environment with the same seed
+        sim_env = gym.make(self.env_str, **self.env_config)
+
+        # Reset tracking structures
+        self.memory_access_log = {}
+        self.current_step = 0
+
+        # Enable access tracking
+        self._enable_memory_access_tracking()
+
+        # Run a complete simulation episode
+        sim_obs, _ = sim_env.reset()
+        self.manage_memory(sim_obs["room"], self.current_step)
+
+        # Track how many steps the simulation needed
+        total_steps = 0
+        while True:
+            if total_steps % 10 == 0:
+                print(f"Simulation step {self.current_step}")
+
+            action_pair = self._generate_action_pair(sim_obs)
+            sim_obs, _, sim_done, _, _ = sim_env.step(action_pair)
+            self.current_step += 1
+            total_steps += 1
+            self.manage_memory(sim_obs["room"], self.current_step)
+            if sim_done:
+                break
+
+        # Process the access log
+        print(
+            f"Processing memory access log: {len(self.memory_access_log)} steps recorded"
+        )
+        self._process_memory_access_log()
+
+        # Calculate and print simulation stats
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        print(f"Precomputation complete: {total_steps} steps in {duration:.2f} seconds")
+        print(f"Recorded {len(self.next_access_lookup)} unique memory IDs")
+
+        # Cleanup and reset
+        self._disable_memory_access_tracking()
+        self.humemai.reset()
+        self.current_step = 0
+
+    def _process_memory_access_log(self):
+        """Process raw memory access log into a next-access lookup table"""
+        print(f"Memory access log has {len(self.memory_access_log)} steps")
+
+        # Create lookup: {memory_id: [ordered list of access times]}
+        self.next_access_lookup = {}
+
+        # Sort steps in ascending order
+        sorted_steps = sorted(self.memory_access_log.keys())
+
+        for step in sorted_steps:
+            for memory_id in self.memory_access_log[step]:
+                if memory_id not in self.next_access_lookup:
+                    self.next_access_lookup[memory_id] = []
+                self.next_access_lookup[memory_id].append(step)
+
+        print(f"Created next-access lookup for {len(self.next_access_lookup)} memories")
+
+    def _enable_memory_access_tracking(self):
+        """Enable tracking for Bélády's algorithm simulation"""
+        print("Enabling memory access tracking")
+        self.tracking_enabled = True
+        self.current_step = 0
+
+        # Original methods we'll restore later
+        self._original_handle_qa = self.answer_question
+        self._original_explore = self.explore
+
+        # Override with tracking versions
+        def tracking_qa(question):
+            answer = self._original_handle_qa(question)
+            # After answering, log any memory accesses
+            print(f"Recording QA access at step {self.current_step}")
+            self._record_all_accessed_memories()
+            return answer
+
+        def tracking_explore():
+            direction = self._original_explore()
+            # After exploring, log any memory accesses
+            print(f"Recording exploration access at step {self.current_step}")
+            self._record_all_accessed_memories()
+            return direction
+
+        # Replace methods with tracking versions
+        self.answer_question = tracking_qa
+        self.explore = tracking_explore
+
+    def _disable_memory_access_tracking(self):
+        """Disable tracking and restore original methods"""
+        print("Disabling memory access tracking")
+        if hasattr(self, "_original_handle_qa"):
+            self.answer_question = self._original_handle_qa
+            self.explore = self._original_explore
+        self.tracking_enabled = False
+
+    def _record_all_accessed_memories(self):
+        """Record all memories with updated 'last_accessed' at current step"""
+        # More comprehensive query to capture all accessed memories
+        query = """
+            PREFIX humemai: <https://humem.ai/ontology#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT DISTINCT ?memoryID
+            WHERE {
+              {
+                # Capture memories by last_accessed
+                ?stmt rdf:type rdf:Statement ;
+                      humemai:memoryID ?memoryID ;
+                      humemai:last_accessed ?la .
+                FILTER(str(?la) = ?current_time)
+              }
+              UNION
+              {
+                # Also capture memories by recalled increment
+                ?stmt rdf:type rdf:Statement ;
+                      humemai:memoryID ?memoryID ;
+                      humemai:recalled ?rec .
+                # Only if they have been accessed recently
+                ?stmt humemai:last_accessed ?la .
+                FILTER(str(?la) = ?current_time)
+              }
+            }
+        """
+        # Bind the current time as parameter to avoid string interpolation
+        current_time = self.current_time.isoformat(timespec="seconds")
+        results = list(
+            self.humemai.graph.query(
+                query, initBindings={"current_time": Literal(current_time)}
+            )
+        )
+
+        if not self.current_step in self.memory_access_log:
+            self.memory_access_log[self.current_step] = set()
+
+        # Add debugging info
+        print(f"Found {len(results)} memories accessed at step {self.current_step}")
+        for row in results:
+            memory_id = int(row.memoryID)
+            self.memory_access_log[self.current_step].add(memory_id)

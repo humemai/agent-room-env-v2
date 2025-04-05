@@ -48,6 +48,7 @@ class Agent:
         },
         num_samples_for_results: int = 10,
         default_root_dir: str = "./training-results/",
+        save_results: bool = True,
         **kwargs: Any,
     ) -> None:
         """
@@ -58,6 +59,7 @@ class Agent:
             env_config: A dictionary containing the environment configuration.
             num_samples_for_results: The number of test episodes to run.
             default_root_dir: The root directory to store the results.
+            save_results: Whether to save the results to disk.
             **kwargs: Additional keyword arguments to be added to the configuration.
         """
         params_to_save = deepcopy(locals())
@@ -70,10 +72,13 @@ class Agent:
         self.env_str = env_str
         self.env_config = env_config
         self.num_samples_for_results = num_samples_for_results
+        self.save_results = save_results
         self.default_root_dir = os.path.join(default_root_dir, str(datetime.now()))
 
         self.env: gym.Env = gym.make(self.env_str, **self.env_config)
-        self._create_directory(params_to_save)
+
+        if self.save_results:
+            self._create_directory(params_to_save)
 
     def _create_directory(self, params_to_save: dict[str, Any]) -> None:
         """Create the directory to store the results.
@@ -169,7 +174,8 @@ class Agent:
 
         print(f"Results: {results}")
 
-        write_yaml(results, os.path.join(self.default_root_dir, "results.yaml"))
+        if self.save_results:
+            write_yaml(results, os.path.join(self.default_root_dir, "results.yaml"))
         return results
 
     def _generate_action_pair(

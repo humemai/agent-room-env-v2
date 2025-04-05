@@ -38,6 +38,7 @@ class ShortTermAgent(Agent):
         qa_policy: str = "one_hop",
         explore_policy: str = "avoid_walls",
         num_samples_for_results: int = 10,
+        save_results: bool = True,
         default_root_dir: str = "./training-results/",
     ) -> None:
         """Initialize the ShortTermAgent with the provided environment configuration,
