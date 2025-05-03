@@ -45,7 +45,7 @@ class LongTermAgent(Agent):
         },
         qa_policy: str = "latest",
         explore_policy: str = "bfs",  # "random", "avoid_walls", "bfs", "dijkstra"
-        mm_policy: str = "FIFO",  # "FIFO", "LRU", "LFU", "LFU+LRU", "random", "belady"
+        mm_policy: str = "FIFO",  # "FIFO", "LRU", "LFU", "LFU+LRU", "random"
         max_long_term_memory_size: int = 100,
         num_samples_for_results: int = 10,
         save_results: bool = True,
@@ -63,17 +63,6 @@ class LongTermAgent(Agent):
         self.qa_policy = qa_policy
         self.explore_policy = explore_policy
         self.mm_policy = mm_policy
-        if self.mm_policy == "belady":
-            assert env_config["deterministic_objects"], (
-                "Belady's algorithm requires deterministic objects. "
-                "Set 'deterministic_objects' to True in env_config."
-            )
-            assert env_config["randomize_observations"] == "none", (
-                "Belady's algorithm requires deterministic observations. "
-                "Set 'randomize_observations' to 'none' in env_config."
-            )
-            self.memory_access_log = {}  # {step: set(memory_ids)}
-            self.next_access_lookup = {}  # {memory_id: [future access steps]}
 
         self.max_long_term_memory_size = max_long_term_memory_size
 
@@ -114,8 +103,6 @@ class LongTermAgent(Agent):
                 mem_id_to_delete = self._pick_lfu_lru_victim()
             elif self.mm_policy.lower() == "random":
                 mem_id_to_delete = self._pick_random_victim()
-            elif self.mm_policy.lower() == "belady":
-                mem_id_to_delete = self._pick_belady_victim()
             else:
                 raise NotImplementedError(
                     f"Memory management policy '{self.mm_policy}' not implemented."
@@ -339,78 +326,6 @@ class LongTermAgent(Agent):
         if not rows:
             raise ValueError("No statements => can't pick random victim.")
         return int(random.choice(rows).memoryID)
-
-    # ------------------------ Bélády (no fallback!) ------------------------
-
-    def _pick_belady_victim(self) -> Optional[int]:
-        """
-        Evict the memory that has the furthest *future* access — or none at all.
-        If no memory can be found (i.e. we have no precomputed info), we raise an error
-        instead of falling back to another policy.
-        """
-        # gather all memIDs in LTM
-        query = """
-            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            PREFIX humemai: <https://humem.ai/ontology#>
-            SELECT ?memoryID
-            WHERE {
-              ?stmt rdf:type rdf:Statement ;
-                    humemai:memoryID ?memoryID ;
-                    humemai:event_time ?et .
-            }
-        """
-        rows = list(self.humemai.graph.query(query))
-        if not rows:
-            raise ValueError("No statements => can't pick Belady victim.")
-        memory_ids = [int(r.memoryID) for r in rows]
-        print(f"Belady selection: {len(memory_ids)} possible victims")
-
-        # check which we have precompute data for
-        valid_precomputed = [m for m in memory_ids if m in self.next_access_lookup]
-        print(f"  With future-access data: {len(valid_precomputed)}")
-
-        # We track two groups: never accessed again vs next accessible
-        never_accessed_again = []
-        next_access_map = {}
-
-        for memid in memory_ids:
-            if memid not in self.next_access_lookup:
-                # if no precompute data => we can't guess => let's be strict
-                # interpret that as "never accessed again"
-                never_accessed_again.append(memid)
-            else:
-                future_steps = [
-                    st
-                    for st in self.next_access_lookup[memid]
-                    if st > self.current_step
-                ]
-                if not future_steps:
-                    never_accessed_again.append(memid)
-                else:
-                    # store the earliest upcoming access
-                    next_access_map[memid] = min(future_steps)
-
-        # Priority 1: never accessed again => pick random
-        if never_accessed_again:
-            victim = random.choice(never_accessed_again)
-            print(f"Belady victim: memID={victim}, never accessed again.")
-            return victim
-
-        # Priority 2: furthest next access
-        if next_access_map:
-            # pick the memory whose next access is the largest
-            victim = max(next_access_map.items(), key=lambda kv: kv[1])[0]
-            print(
-                "Belady victim: memID=%d, next access step=%d "
-                "(furthest in future)." % (victim, next_access_map[victim])
-            )
-            return victim
-
-        # If we got here, it means memory_ids existed but
-        # we have no next access times and none in never_accessed_again => weird
-        raise ValueError(
-            "Belady found no suitable victim. We have memories but no future-access data."
-        )
 
     # -------------------------------------------------------------------------
     # QA Policy
@@ -952,165 +867,24 @@ class LongTermAgent(Agent):
 
     def _run_test_episode(self) -> tuple[float, int]:
         """Test run an episode, returning total reward + steps."""
-        if self.mm_policy.lower() == "belady":
-            self.precompute_future_memory_accesses()
 
         score = 0.0
-        step = 0
         self.current_step = 0
 
         self.humemai.reset()
         obs, info = self.env.reset()
 
-        self.manage_memory(obs["room"], step)
+        self.manage_memory(obs["room"], self.current_step)
 
         while True:
             action_pair = self._generate_action_pair(obs)
             obs, reward, done, truncated, info = self.env.step(action_pair)
             score += sum(reward)
 
-            step += 1
-            self.current_step = step
-
-            self.manage_memory(obs["room"], step)
-            if done:
-                break
-
-        return score, step
-
-    # -------------------------------------------------------------------------
-    # Belady Precomputation
-    # -------------------------------------------------------------------------
-
-    def precompute_future_memory_accesses(self):
-        """Run a separate simulation with the same seed to pre-log memory usage."""
-        print("Precomputing future memory accesses for Bélády...")
-
-        from datetime import datetime
-
-        start_t = datetime.now()
-
-        sim_env = gym.make(self.env_str, **self.env_config)
-        self.memory_access_log = {}
-        self.current_step = 0
-
-        self._enable_memory_access_tracking()
-
-        obs, _ = sim_env.reset()
-        self.manage_memory(obs["room"], self.current_step)
-
-        sim_done = False
-        total_steps = 0
-        while not sim_done:
-            if total_steps % 10 == 0:
-                print(f"Sim step {self.current_step} (precompute).")
-
-            act_pair = self._generate_action_pair(obs)
-            obs, _, sim_done, _, _ = sim_env.step(act_pair)
-
-            total_steps += 1
             self.current_step += 1
 
             self.manage_memory(obs["room"], self.current_step)
+            if done:
+                break
 
-        print(f"Simulation ended after {total_steps} steps.")
-        print(
-            f"Processing memory access log with {len(self.memory_access_log)} entries."
-        )
-        self._process_memory_access_log()
-
-        end_t = datetime.now()
-        duration = (end_t - start_t).total_seconds()
-        print(f"Precomputation took {duration:.2f} seconds.")
-        print(
-            f"Found {len(self.next_access_lookup)} unique memory IDs with future steps."
-        )
-
-        self._disable_memory_access_tracking()
-        self.humemai.reset()
-        self.current_step = 0
-
-    def _process_memory_access_log(self):
-        """Build next_access_lookup from memory_access_log."""
-        self.next_access_lookup = {}
-        steps_sorted = sorted(self.memory_access_log.keys())
-        for st in steps_sorted:
-            for memid in self.memory_access_log[st]:
-                if memid not in self.next_access_lookup:
-                    self.next_access_lookup[memid] = []
-                self.next_access_lookup[memid].append(st)
-        print(
-            f"Built next_access_lookup for {len(self.next_access_lookup)} memory IDs."
-        )
-
-    def _enable_memory_access_tracking(self):
-        """Override QA/explore to record memory usage for Bélády."""
-        print("Enabling memory-access tracking (Bélády).")
-        self.tracking_enabled = True
-        self.current_step = 0
-
-        self._original_answer_question = self.answer_question
-        self._original_explore = self.explore
-
-        def tracking_qa(question):
-            ans = self._original_answer_question(question)
-            print(f"Tracking QA access at step={self.current_step}")
-            self._record_all_accessed_memories()
-            return ans
-
-        def tracking_explore():
-            direction = self._original_explore()
-            print(f"Tracking exploration access at step={self.current_step}")
-            self._record_all_accessed_memories()
-            return direction
-
-        self.answer_question = tracking_qa
-        self.explore = tracking_explore
-
-    def _disable_memory_access_tracking(self):
-        """Restore QA/explore methods."""
-        print("Disabling memory-access tracking.")
-        if hasattr(self, "_original_answer_question"):
-            self.answer_question = self._original_answer_question
-        if hasattr(self, "_original_explore"):
-            self.explore = self._original_explore
-        self.tracking_enabled = False
-
-    def _record_all_accessed_memories(self):
-        """
-        Any statement with last_accessed == self.current_time OR recalled incremented
-        at self.current_time => log it for this step.
-        """
-        query = """
-            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            PREFIX humemai: <https://humem.ai/ontology#>
-            SELECT DISTINCT ?memoryID
-            WHERE {
-              {
-                ?stmt rdf:type rdf:Statement ;
-                      humemai:memoryID ?memoryID ;
-                      humemai:last_accessed ?la .
-                FILTER(str(?la) = ?current_time)
-              }
-              UNION
-              {
-                ?stmt rdf:type rdf:Statement ;
-                      humemai:memoryID ?memoryID ;
-                      humemai:recalled ?rec .
-                ?stmt humemai:last_accessed ?la .
-                FILTER(str(?la) = ?current_time)
-              }
-            }
-        """
-        ct_str = self.current_time.isoformat(timespec="seconds")
-        rows = list(
-            self.humemai.graph.query(
-                query, initBindings={"current_time": Literal(ct_str)}
-            )
-        )
-        if self.current_step not in self.memory_access_log:
-            self.memory_access_log[self.current_step] = set()
-
-        print(f"Found {len(rows)} memories accessed at step {self.current_step}")
-        for r in rows:
-            self.memory_access_log[self.current_step].add(int(r.memoryID))
+        return score, self.current_step
