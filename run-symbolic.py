@@ -1,19 +1,10 @@
 import itertools
-import multiprocessing
-import shutil
-from copy import deepcopy
-from datetime import datetime, timedelta
-import random
-from typing import Any
-
-import numpy as np
-import gymnasium as gym
-from rdflib import BNode, XSD, Graph, Literal, Namespace, URIRef
-
-from humemai.rdflib import Humemai
-
 import logging
-from agent import ShortTermAgent, LongTermAgent
+import multiprocessing
+
+from rdflib import Namespace
+
+from agent import LongTermAgent, ShortTermAgent
 
 ns = Namespace("https://humem.ai/ontology#")
 
@@ -77,8 +68,8 @@ def run_long_term_experiment(params):
         mm_policy=mm_policy,
         max_long_term_memory_size=max_memory,
         num_samples_for_results=1,
-        default_root_dir="./foo/",
-        save_results=False,
+        default_root_dir="./training-results/",
+        save_results=True,
     )
     agent.test()
 
@@ -86,36 +77,17 @@ def run_long_term_experiment(params):
 if __name__ == "__main__":
     seeds = [0, 1, 2, 3, 4]
     room_sizes = [
-        "xxl-different-prob",
         "xl-different-prob",
-        "l-different-prob",
-        "m-different-prob",
-        "s-different-prob",
-        "xs-different-prob",
+        # "xxl-different-prob",
     ]
-    qa_policies = ["one_hop"]
-    explore_policies = ["avoid_walls"]
-
-    all_combinations = list(
-        itertools.product(seeds, room_sizes, qa_policies, explore_policies)
-    )
-
-    num_processes = multiprocessing.cpu_count()  # or manually set, e.g., 8
-    with multiprocessing.Pool(num_processes) as pool:
-        pool.map(run_short_term_experiment, all_combinations)
-
-    seeds = [0, 1, 2, 3, 4]
-    room_sizes = [
-        "xxl-different-prob",
-        "xl-different-prob",
-        "l-different-prob",
-        "m-different-prob",
-        "s-different-prob",
-        "xs-different-prob",
+    qa_policies = [
+        "most_recently_added",
+        "most_recently_used",
+        "most_frequently_used",
+        "random",
     ]
-    qa_policies = ["latest"]
-    explore_policies = ["dijkstra"]
-    mm_policies = ["lfu"]
+    explore_policies = ["bfs", "dijkstra", "random"]
+    mm_policies = ["lfu", "lru", "fifo", "random"]
     max_memories = [0, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
 
     all_combinations = list(
@@ -126,4 +98,4 @@ if __name__ == "__main__":
 
     num_processes = multiprocessing.cpu_count()  # or choose a fixed number
     with multiprocessing.Pool(num_processes) as pool:
-        pool.map(run_experiment, all_combinations)
+        pool.map(run_long_term_experiment, all_combinations)

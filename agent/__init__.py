@@ -1,3 +1,3 @@
 from .agent import Agent
-from .short import ShortTermAgent
 from .long import LongTermAgent
+from .short import ShortTermAgent

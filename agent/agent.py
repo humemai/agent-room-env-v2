@@ -13,9 +13,8 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
-import numpy as np
 import gymnasium as gym
-
+import numpy as np
 
 from .utils import write_yaml
 

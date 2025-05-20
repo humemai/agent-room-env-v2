@@ -1,12 +1,74 @@
 # Agent for RoomEnv-v2
 
-[![DOI](https://zenodo.org/badge/776465360.svg)](https://doi.org/10.5281/zenodo.10876433)
-## [RoomEnv-v2](https://github.com/humemai/room-env/blob/main/README-v2.md)
+This repository contains implementations of symbolic agents for the
+[RoomEnv-v2](https://github.com/humemai/room-env/blob/main/README-v2.md) environment.
+The environment represents a partially observable world where both the hidden state and
+agent observations are represented as knowledge graphs.
 
-This repo introduces the gynmasium compatible room-env, where both the hidden states and
-partial observations are represented as knowledge graphs. The agent is required to come
-up with two policies—1. maze navigation (exploration) and 2. question answering. It's
-highly recommended for the agent to have a long-term memory.
+## Agent Types
+
+### ShortTermAgent
+
+- Uses only current observations without long-term memory
+- Question answering is performed via SPARQL queries on current observation
+- Exploration policies: random, avoid_walls
+
+### LongTermAgent
+
+- Maintains both short-term and limited long-term memory
+- Question answering via SPARQL queries across both memories
+- Question answering policies:
+  - `most_recently_added`: Prioritize memories with the most recent timestamp
+  - `most_recently_used`: Prioritize memories that were accessed most recently
+  - `most_frequently_used`: Prioritize memories that have been accessed most frequently
+  - `random`: Randomly choose between the three policies above
+- Exploration policies:
+  - `random`: Choose random direction
+  - `avoid_walls`: Avoid hitting walls
+  - `bfs`: Use breadth-first search to find unvisited rooms
+  - `dijkstra`: Use Dijkstra's algorithm with weights based on room contents
+- Memory management policies:
+  - `fifo`: First-In-First-Out eviction
+  - `lru`: Least-Recently-Used eviction
+  - `lfu`: Least-Frequently-Used eviction
+  - `random`: Random eviction
+
+## Running Experiments
+
+The [`run-symbolic.py`](./run-symbolic.py) script allows running experiments with different configurations:
+
+```bash
+python run-symbolic.py
+```
+
+You can modify the script to adjust parameters such as:
+
+- Seeds for reproducibility
+- Room sizes
+- QA policies
+- Exploration policies
+- Memory management policies
+- Memory capacities
+
+## Experiment Results
+
+![Agent Performance Across Different Strategies](figures/agent_test_performance.png)
+
+The figure shows agent performance across different exploration strategies, long-term
+memory capacities, and memory management policies. Performance consistently improves as
+memory capacity increases, and structured exploration (Dijkstra, BFS) outperforms random
+exploration.
+
+The best performing set of symbolic policies are "most frequently used" for question
+answering, "least frequently used" for long-term memory management, and "Dijkstra"
+search for maze exploration.
+
+## Implementation Approach
+
+All policies in this repository (question answering, exploration, and memory management)
+are implemented as symbolic, discrete algorithms without any learning components. This
+provides a transparent baseline but leaves significant room for improvement through
+reinforcement learning approaches that could adapt to specific environment dynamics.
 
 ## Contributing
 

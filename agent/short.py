@@ -2,19 +2,18 @@
 to store and retrieve observations, along with QA and exploration policies.
 """
 
+import random
 import shutil
 from copy import deepcopy
 from datetime import datetime, timedelta
-import random
 from typing import Any
 
-import numpy as np
 import gymnasium as gym
+import numpy as np
+from humemai.rdflib import Humemai
 from rdflib import XSD, Graph, Literal, Namespace, URIRef
 
-from humemai.rdflib import Humemai
 from .agent import Agent
-
 from .utils import write_yaml
 
 
