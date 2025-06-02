@@ -40,9 +40,10 @@ class LongTermAgent(Agent):
             "include_walls_in_observations": True,
             "deterministic_objects": False,
         },
-        qa_policy: str = "most_recently_added",  # "most_recently_added", "most_recently_used", "most_frequently_used", "random"
-        explore_policy: str = "dijkstra",  # "random", "avoid_walls", "bfs", "dijkstra"
-        mm_policy: str = "FIFO",  # "FIFO", "LRU", "LFU", "random"
+        qa_policy: str = "most_frequently_used",
+        explore_policy: str = "dijkstra",
+        mm_long_policy: str = "FIFO",
+        mm_short_policy: str = None,  # Not used in this agent
         max_long_term_memory_size: int = 100,
         num_samples_for_results: int = 10,
         save_results: bool = True,
@@ -57,9 +58,30 @@ class LongTermAgent(Agent):
         del params_to_save["__class__"]
         super().__init__(**params_to_save)
 
-        self.qa_policy = qa_policy
-        self.explore_policy = explore_policy
-        self.mm_policy = mm_policy
+        assert qa_policy.lower() in [
+            "most_recently_added",
+            "most_recently_used",
+            "most_frequently_used",
+            "random",
+        ], f"Invalid QA policy: {qa_policy}"
+        self.qa_policy = qa_policy.lower()
+
+        assert explore_policy.lower() in [
+            "random",
+            "avoid_walls",
+            "bfs",
+            "dijkstra",
+        ], f"Invalid explore policy: {explore_policy}"
+        self.explore_policy = explore_policy.lower()
+
+        assert mm_long_policy.lower() in [
+            "fifo",
+            "lru",
+            "lfu",
+            "random",
+        ], f"Invalid long-term memory management policy: {mm_long_policy}"
+        self.mm_long_policy = mm_long_policy.lower()
+        self.mm_short_policy = mm_short_policy
 
         self.max_long_term_memory_size = max_long_term_memory_size
 
@@ -84,23 +106,28 @@ class LongTermAgent(Agent):
           4) Add new short-term observations.
         """
         # 1) Move short-term => episodic
+        if self.mm_short_policy is not None:
+            raise NotImplementedError(
+                "Short-term memory management is not implemented in this agent."
+            )
+
         self.humemai.move_all_short_term_to_episodic()
 
         # 2) While we exceed memory limits, prune one statement at a time
         while (
             self.humemai.get_long_term_memory_count() > self.max_long_term_memory_size
         ):
-            if self.mm_policy.lower() == "fifo":
+            if self.mm_long_policy.lower() == "fifo":
                 mem_id_to_delete = self._pick_fifo_victim()
-            elif self.mm_policy.lower() == "lru":
+            elif self.mm_long_policy.lower() == "lru":
                 mem_id_to_delete = self._pick_lru_victim()
-            elif self.mm_policy.lower() == "lfu":
+            elif self.mm_long_policy.lower() == "lfu":
                 mem_id_to_delete = self._pick_lfu_victim()
-            elif self.mm_policy.lower() == "random":
+            elif self.mm_long_policy.lower() == "random":
                 mem_id_to_delete = self._pick_random_victim()
             else:
                 raise NotImplementedError(
-                    f"Memory management policy '{self.mm_policy}' not implemented."
+                    f"Memory management policy '{self.mm_long_policy}' not implemented."
                 )
 
             if mem_id_to_delete is None:
