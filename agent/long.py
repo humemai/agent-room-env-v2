@@ -42,12 +42,12 @@ class LongTermAgent(Agent):
         },
         qa_policy: str = "most_frequently_used",
         explore_policy: str = "dijkstra",
-        mm_long_policy: str = "FIFO",
-        mm_short_policy: str = None,  # Not used in this agent
+        mm_long_policy: str = "lfu",
         max_long_term_memory_size: int = 100,
         num_samples_for_results: int = 10,
         save_results: bool = True,
         default_root_dir: str = "./training-results/",
+        **kwargs: Any,
     ) -> None:
         """
         Initialize a LongTermAgent with environment configuration, QA policy,
@@ -81,7 +81,6 @@ class LongTermAgent(Agent):
             "random",
         ], f"Invalid long-term memory management policy: {mm_long_policy}"
         self.mm_long_policy = mm_long_policy.lower()
-        self.mm_short_policy = mm_short_policy
 
         self.max_long_term_memory_size = max_long_term_memory_size
 
@@ -105,12 +104,6 @@ class LongTermAgent(Agent):
           3) Clear short-term memory.
           4) Add new short-term observations.
         """
-        # 1) Move short-term => episodic
-        if self.mm_short_policy is not None:
-            raise NotImplementedError(
-                "Short-term memory management is not implemented in this agent."
-            )
-
         self.humemai.move_all_short_term_to_episodic()
 
         # 2) While we exceed memory limits, prune one statement at a time
@@ -494,7 +487,11 @@ class LongTermAgent(Agent):
     # -------------------------------------------------------------------------
 
     def explore(self) -> str:
-        """Explore with the specified self.explore_policy."""
+        """Explore with the specified self.explore_policy.
+
+        Returns:
+            str: Direction to explore: "north", "south", "east", "west", or "stay".
+        """
         if self.explore_policy == "random":
             return random.choice(["north", "south", "east", "west", "stay"])
         elif self.explore_policy == "avoid_walls":

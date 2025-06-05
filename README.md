@@ -63,6 +63,26 @@ The best performing set of symbolic policies are "most frequently used" for ques
 answering, "least frequently used" for long-term memory management, and "Dijkstra"
 search for maze exploration.
 
+### Best Performing Configuration
+
+_Configuration: QA Policy = most_frequently_used, Explore Policy = dijkstra, MM Long Policy = lfu_
+
+| Memory Size | Mean Score (± Std) |
+| ----------- | ------------------ |
+| 0           | 0.2 (± 0)          |
+| 2           | 124.4 (± 49)       |
+| 4           | 217.4 (± 80)       |
+| 8           | 331.0 (± 71)       |
+| 16          | 415.4 (± 120)      |
+| 32          | 630.0 (± 23)       |
+| 64          | 669.6 (± 7)        |
+| 128         | 660.0 (± 8)        |
+| 256         | 660.6 (± 15)       |
+| 512         | 660.6 (± 5)        |
+| 1024        | 663.8 (± 13)       |
+
+_Configuration: QA Policy = most_frequently_used, Explore Policy = dijkstra, MM Long Policy = lfu_
+
 ## Implementation Approach
 
 All policies in this repository (question answering, exploration, and memory management)

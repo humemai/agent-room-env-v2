@@ -1,5 +1,5 @@
 torch==2.1.1
-humemai==2.5.0
+humemai==2.5.2
 room-env==2.2.0
 numpy==1.26.4
 torch-scatter==2.1.2

@@ -172,3 +172,6 @@ junks/
 
 # pdoc
 _docs/
+
+# old agent
+old-agent/
