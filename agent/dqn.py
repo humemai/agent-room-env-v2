@@ -1,14 +1,15 @@
-from copy import deepcopy
-from typing import Any
 import os
+from copy import deepcopy
 from datetime import timedelta
+from typing import Any
+
 import torch
 import torch.optim as optim
 from rdflib import XSD, Literal, URIRef
 
 from .long import LongTermAgent
 from .nn import GNN
-from .utils import write_yaml, select_action
+from .utils import select_action, write_yaml
 
 
 class DQNAgent(LongTermAgent):
@@ -34,7 +35,8 @@ class DQNAgent(LongTermAgent):
         },
         qa_policy: str = "most_frequently_used",
         explore_policy: str = "dijkstra",
-        mm_long_policy: str = "lfu",
+        mm_forget_policy: str = "lfu",
+        mm_remember_policy: str = "all",
         max_long_term_memory_size: int = 100,
         num_samples_for_results: dict = {"val": 5, "test": 10},
         save_results: bool = True,
@@ -68,6 +70,7 @@ class DQNAgent(LongTermAgent):
         device: str = "cpu",
         ddqn: bool = True,
         rl_state: str = "all",
+        pretrain_semantic: str | bool = False,
     ) -> None:
         r"""Initialize the DQNAgent.
         Args:
@@ -75,7 +78,9 @@ class DQNAgent(LongTermAgent):
             env_config: A dictionary containing the environment configuration.
             qa_policy: The policy to use for answering questions.
             explore_policy: The policy to use for exploration.
-            mm_long_policy: The policy to use for long-term memory management.
+            mm_forget_policy: The policy to use when the long-term memory is full.
+            mm_remember_policy: The policy to use when we have to move from short-term
+                to long-term.
             max_long_term_memory_size: The maximum size of the long-term memory.
             num_samples_for_results: A dictionary containing the number of samples for
                 validation and testing.
@@ -102,6 +107,8 @@ class DQNAgent(LongTermAgent):
             rl_state: The state representation to use for reinforcement learning
                 ("all", "short"). Default is "all", which uses both short-term and
                 long-term memories.
+            pretrain_semantic: Whether to pretrain the semantic memory.
+                False, "exclude_walls", "include_walls"
 
         """
         env_config["seed"] = train_seed
@@ -130,6 +137,7 @@ class DQNAgent(LongTermAgent):
         self.device = device
         self.ddqn = ddqn
         self.rl_state = rl_state
+        self.pretrain_semantic = pretrain_semantic
 
         assert self.batch_size <= self.warm_start <= self.replay_buffer_size
 
@@ -141,21 +149,29 @@ class DQNAgent(LongTermAgent):
             e for entities in self.env.unwrapped.entities.values() for e in entities
         ]  # main entities
         self.dqn_params["entities"] += [
-            str(i) for i in range(1000)
+            str(i) for i in range(env_config["terminates_at"] * 2)
         ]  # number entities for `num_recalled`
 
-        # Add date strings from base_date + 0 to 100 days
+        # Add date strings
         self.dqn_params["entities"] += [
             (self.base_date + timedelta(days=i)).isoformat(timespec="seconds")
-            for i in range(101)  # 0 to 100 inclusive
+            for i in range(env_config["terminates_at"] + 2)
         ]  # date entities for temporal reasoning
 
         # Main triple relations have "inv", while qualifier relations don't have "inv".
         self.dqn_params["relations"] = (
             self.env.unwrapped.relations
             + [rel + "_inv" for rel in self.env.unwrapped.relations]
-            + ["current_time", "time_added", "last_accessed", "num_recalled"]
+            + [
+                "current_time",
+                "time_added",
+                "last_accessed",
+                "num_recalled",
+                "derived_from",
+            ]
         )
+        self.dqn_params["mm_forget_policy"] = self.mm_forget_policy
+        self.dqn_params["mm_remember_policy"] = self.mm_remember_policy
 
         self.dqn = GNN(**self.dqn_params)
         self.dqn_target = GNN(**self.dqn_params)
@@ -168,19 +184,63 @@ class DQNAgent(LongTermAgent):
         self.q_values = {"train": [], "val": [], "test": []}
 
         self._save_number_of_parameters()
+        self.init_memory_systems()
 
     def _save_number_of_parameters(self) -> None:
         r"""Save the number of parameters in the model."""
-        write_yaml(
-            {
-                "total": sum(p.numel() for p in self.dqn.parameters()),
-                "gcn_layers": sum(p.numel() for p in self.dqn.gcn_layers.parameters()),
-                "mlp": sum(p.numel() for p in self.dqn.mlp.parameters()),
-                "entity_embeddings": self.dqn.entity_embeddings.numel(),
-                "relation_embeddings": self.dqn.relation_embeddings.numel(),
-            },
-            os.path.join(self.default_root_dir, "num_params.yaml"),
-        )
+        dict_ = {
+            "total": sum(p.numel() for p in self.dqn.parameters()),
+            "gcn_layers": sum(p.numel() for p in self.dqn.gcn_layers.parameters()),
+            "entity_embeddings": self.dqn.entity_embeddings.numel(),
+            "relation_embeddings": self.dqn.relation_embeddings.numel(),
+        }
+
+        if self.dqn.mlp_mm_remember is not None:
+            dict_["mlp_mm_remember"] = sum(
+                p.numel() for p in self.dqn.mlp_mm_remember.parameters()
+            )
+        if self.dqn.mlp_mm_forget is not None:
+            dict_["mlp_mm_forget"] = sum(
+                p.numel() for p in self.dqn.mlp_mm_forget.parameters()
+            )
+        write_yaml(dict_, os.path.join(self.default_root_dir, "num_params.yaml"))
+
+    def init_memory_systems(self) -> None:
+        r"""Initialize the agent's memory systems. This has nothing to do with the
+        replay buffer."""
+
+        self.current_step = 0
+        self.current_time = self.base_date + timedelta(days=self.current_step)
+        self.humemai.reset()
+
+        assert self.pretrain_semantic in [False, "exclude_walls", "include_walls"]
+        if self.pretrain_semantic in ["exclude_walls", "include_walls"]:
+
+            if self.pretrain_semantic == "exclude_walls":
+                exclude_walls = True
+            else:
+                exclude_walls = False
+            room_layout = self.env.unwrapped.return_room_layout(exclude_walls)
+
+            for triple in room_layout:
+                self.humemai.add_semantic_memory(
+                    triples=[[URIRef(item) for item in triple]],
+                    qualifiers={
+                        self.humemai_ns.time_added: Literal(
+                            self.current_time.isoformat(timespec="seconds"),
+                            datatype=XSD.dateTime,
+                        ),
+                        self.humemai_ns.derived_from: Literal(
+                            "human",
+                            datatype=XSD.string,
+                        ),
+                    },
+                )
+                if (
+                    self.humemai.get_long_term_memory_count()
+                    >= self.max_long_term_memory_size
+                ):
+                    break
 
     def get_memory_list(self) -> list[list[str]]:
         """Get a list of all memory entities.
@@ -207,8 +267,7 @@ class DQNAgent(LongTermAgent):
         memory_list = self.get_memory_list()
         assert len(memory_list["short"]) == 0, "Short-term memory should be empty."
 
-        # insert new observations in short-term
-        self.current_time = self.base_date + timedelta(days=self.current_step)
+        # Encode new observations as short-term memory
         triples = [[URIRef(item) for item in obs] for obs in self.observations["room"]]
         qualifiers = {
             self.humemai_ns.current_time: Literal(
@@ -218,8 +277,8 @@ class DQNAgent(LongTermAgent):
         self.humemai.add_short_term_memory(triples=triples, qualifiers=qualifiers)
 
     def reset(self) -> None:
-        self.current_step = 0
-        self.humemai.reset()
+        r"""Reset the agent's environment and memory systems."""
+        self.init_memory_systems()
         self.observations, info = self.env.reset()
 
         # encode observations as short-term
@@ -243,9 +302,13 @@ class DQNAgent(LongTermAgent):
             greedy: whether to use greedy policy
 
         Returns:
-            action, q_value, reward, answers, done, explore
+            actions, q_values, rewards, done
 
         """
+        # 1. generate answers and exploration direction
+        answers, explore_direction = self._generate_action_pair(self.observations)
+
+        # 2. manage short-term memory
         memory_list = self.get_memory_list()
 
         assert len(memory_list["short"]) > 0, "Short-term memory should not be empty."
@@ -272,37 +335,33 @@ class DQNAgent(LongTermAgent):
         ), "The number of actions should be equal to the number of short-term memories."
 
         for action, mem_short in zip(actions, memory_list["short"]):
-
             if action == self.action2int["remember"]:
                 self.humemai.move_short_term_to_episodic(
-                    memory_id_to_move=mem_short[-1]["memoryID"]
+                    memory_id_to_move=Literal(mem_short[-1]["memory_id"])
                 )
-
-
-
-            manage_memory(self.memory_systems, self.action_mm2str[a_mm_], mem_short)
+            elif action == self.action2int["forget"]:
+                self.humemai.delete_memory(Literal(mem_short[-1]["memory_id"]))
+            else:
+                raise ValueError(
+                    f"Invalid action: {action}. "
+                    "Use 'remember' or 'forget' to specify the action."
+                )
 
         (
             self.observations,
-            reward,
+            rewards,
             done,
             truncated,
             info,
-        ) = self.env.step((answers, self.action_explore2str[a_explore.item()]))
-        self.memory_systems.long.decay()
-        self.num_semantic_decayed += 1
+        ) = self.env.step((answers, explore_direction))
+
+        # update current time
+        self.current_step += 1
+        self.current_time = self.base_date + timedelta(days=self.current_step)
+
         done = done or truncated
 
-        # 4. encode observations
-        encode_all_observations(self.memory_systems, self.observations["room"])
+        # 3. encode_all_observations
+        self.encode_all_observations()
 
-        return (
-            a_explore,
-            q_explore,
-            a_mm,
-            q_mm,
-            reward,
-            intrinsic_explore_reward,
-            answers,
-            done,
-        )
+        return actions, q_values, rewards, done

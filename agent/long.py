@@ -1,6 +1,6 @@
 """This module defines the LongTermAgent class which uses both short-term and
 long-term memory to store and retrieve observations, along with QA, exploration, and
-memory management policies.
+memory management (forget and remember) policies.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from .agent import Agent
 class LongTermAgent(Agent):
     """
     An agent that manages both short-term and long-term memories via Humemai.
-    Supports QA, exploration, and memory management policies.
+    Supports QA, exploration, and memory management (forget and remember) policies.
     """
 
     def __init__(
@@ -42,7 +42,8 @@ class LongTermAgent(Agent):
         },
         qa_policy: str = "most_frequently_used",
         explore_policy: str = "dijkstra",
-        mm_long_policy: str = "lfu",
+        mm_forget_policy: str = "lfu",
+        mm_remember_policy: str = "all",
         max_long_term_memory_size: int = 100,
         num_samples_for_results: int = 10,
         save_results: bool = True,
@@ -74,13 +75,20 @@ class LongTermAgent(Agent):
         ], f"Invalid explore policy: {explore_policy}"
         self.explore_policy = explore_policy.lower()
 
-        assert mm_long_policy.lower() in [
+        assert mm_forget_policy.lower() in [
             "fifo",
             "lru",
             "lfu",
             "random",
-        ], f"Invalid long-term memory management policy: {mm_long_policy}"
-        self.mm_long_policy = mm_long_policy.lower()
+            "rl",  # 'rl' is a placeholder for future RL-based policies
+        ], f"Invalid long-term memory management policy: {mm_forget_policy}"
+        self.mm_forget_policy = mm_forget_policy.lower()
+
+        assert mm_remember_policy.lower() in [
+            "all",
+            "rl",  # 'rl' is a placeholder for future RL-based policies
+        ], f"Invalid long-term memory remember policy: {mm_remember_policy}"
+        self.mm_remember_policy = mm_remember_policy.lower()
 
         self.max_long_term_memory_size = max_long_term_memory_size
 
@@ -104,33 +112,40 @@ class LongTermAgent(Agent):
           3) Clear short-term memory.
           4) Add new short-term observations.
         """
-        self.humemai.move_all_short_term_to_episodic()
+        if self.mm_remember_policy == "all":
+            self.humemai.move_all_short_term_to_episodic()
+        else:
+            raise NotImplementedError(
+                f"Memory management remember policy '{self.mm_remember_policy}' not implemented."
+            )
+
+        # assert short-term is empty
+        assert (
+            self.humemai.get_short_term_memory_count() == 0
+        ), "Short-term memory should be empty after moving to episodic."
 
         # 2) While we exceed memory limits, prune one statement at a time
         while (
             self.humemai.get_long_term_memory_count() > self.max_long_term_memory_size
         ):
-            if self.mm_long_policy.lower() == "fifo":
+            if self.mm_forget_policy.lower() == "fifo":
                 mem_id_to_delete = self._pick_fifo_victim()
-            elif self.mm_long_policy.lower() == "lru":
+            elif self.mm_forget_policy.lower() == "lru":
                 mem_id_to_delete = self._pick_lru_victim()
-            elif self.mm_long_policy.lower() == "lfu":
+            elif self.mm_forget_policy.lower() == "lfu":
                 mem_id_to_delete = self._pick_lfu_victim()
-            elif self.mm_long_policy.lower() == "random":
+            elif self.mm_forget_policy.lower() == "random":
                 mem_id_to_delete = self._pick_random_victim()
             else:
                 raise NotImplementedError(
-                    f"Memory management policy '{self.mm_long_policy}' not implemented."
+                    f"Memory management forget policy '{self.mm_forget_policy}' not implemented."
                 )
 
             if mem_id_to_delete is None:
                 raise ValueError("No memory ID found for deletion.")
             self.humemai.delete_memory(Literal(mem_id_to_delete))
 
-        # 3) Clear short-term
-        self.humemai.clear_short_term_memories()
-
-        # 4) Insert new observations in short-term
+        # 3) Insert new observations in short-term
         self.current_time = self.base_date + timedelta(days=step)
         triples = [[URIRef(item) for item in obs] for obs in observations]
         qualifiers = {
@@ -175,15 +190,15 @@ class LongTermAgent(Agent):
             PREFIX humemai: <https://humem.ai/ontology#>
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
             PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-            SELECT ?memoryID
+            SELECT ?memory_id
             WHERE {{
               ?stmt rdf:type rdf:Statement ;
                     humemai:time_added "{t}"^^xsd:dateTime ;
-                    humemai:memoryID ?memoryID .
+                    humemai:memory_id ?memory_id .
             }}
         """
         rows = list(self.humemai.graph.query(query))
-        return [int(r.memoryID) for r in rows]
+        return [int(r.memory_id) for r in rows]
 
     # ------------------------ LRU ------------------------
 
@@ -198,10 +213,10 @@ class LongTermAgent(Agent):
         query = """
             PREFIX humemai: <https://humem.ai/ontology#>
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            SELECT ?memoryID ?la ?rec ?ta
+            SELECT ?memory_id ?la ?rec ?ta
             WHERE {
               ?stmt rdf:type rdf:Statement ;
-                    humemai:memoryID ?memoryID ;
+                    humemai:memory_id ?memory_id ;
                     humemai:last_accessed ?la ;
                     humemai:num_recalled ?rec ;
                     humemai:time_added ?ta .
@@ -213,7 +228,7 @@ class LongTermAgent(Agent):
 
         # Convert to list of tuples: (memory_id, last_accessed, num_recalled, time_added)
         candidates = [
-            (int(row.memoryID), str(row.la), int(row.rec), str(row.ta)) for row in rows
+            (int(row.memory_id), str(row.la), int(row.rec), str(row.ta)) for row in rows
         ]
 
         # Step 1: Filter by oldest last_accessed (LRU)
@@ -256,10 +271,10 @@ class LongTermAgent(Agent):
         query = """
             PREFIX humemai: <https://humem.ai/ontology#>
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            SELECT ?memoryID ?rec ?la ?ta
+            SELECT ?memory_id ?rec ?la ?ta
             WHERE {
               ?stmt rdf:type rdf:Statement ;
-                    humemai:memoryID ?memoryID ;
+                    humemai:memory_id ?memory_id ;
                     humemai:num_recalled ?rec ;
                     humemai:last_accessed ?la ;
                     humemai:time_added ?ta .
@@ -271,7 +286,7 @@ class LongTermAgent(Agent):
 
         # Convert to list of tuples: (memory_id, num_recalled, last_accessed, time_added)
         candidates = [
-            (int(row.memoryID), int(row.rec), str(row.la), str(row.ta)) for row in rows
+            (int(row.memory_id), int(row.rec), str(row.la), str(row.ta)) for row in rows
         ]
 
         # Step 1: Filter by lowest num_recalled (LFU)
@@ -307,17 +322,17 @@ class LongTermAgent(Agent):
         query = """
             PREFIX humemai: <https://humem.ai/ontology#>
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            SELECT ?memoryID
+            SELECT ?memory_id
             WHERE {
               ?stmt rdf:type rdf:Statement ;
-                    humemai:memoryID ?memoryID ;
+                    humemai:memory_id ?memory_id ;
                     humemai:time_added ?ta .
             }
         """
         rows = list(self.humemai.graph.query(query))
         if not rows:
             raise ValueError("No statements => can't pick random victim.")
-        return int(random.choice(rows).memoryID)
+        return int(random.choice(rows).memory_id)
 
     # -------------------------------------------------------------------------
     # QA Policy

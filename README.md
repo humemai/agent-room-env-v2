@@ -27,11 +27,13 @@ agent observations are represented as knowledge graphs.
   - `avoid_walls`: Avoid hitting walls
   - `bfs`: Use breadth-first search to find unvisited rooms
   - `dijkstra`: Use Dijkstra's algorithm with weights based on room contents
-- Memory management policies:
+- Memory management (forget) policies:
   - `fifo`: First-In-First-Out eviction
   - `lru`: Least-Recently-Used eviction
   - `lfu`: Least-Frequently-Used eviction
   - `random`: Random eviction
+- Memory management (remmeber) policies:
+  - `all`: Remember everything in the short-term as long-term
 
 ## Running Experiments
 
@@ -47,7 +49,7 @@ You can modify the script to adjust parameters such as:
 - Room sizes
 - QA policies
 - Exploration policies
-- Memory management policies
+- Memory management (remember and forget) policies
 - Memory capacities
 
 ## Experiment Results
@@ -59,29 +61,30 @@ memory capacities, and memory management policies. Performance consistently impr
 memory capacity increases, and structured exploration (Dijkstra, BFS) outperforms random
 exploration.
 
-The best performing set of symbolic policies are "most frequently used" for question
-answering, "least frequently used" for long-term memory management, and "Dijkstra"
-search for maze exploration.
+The best performing set of symbolic policies are "most recently added" for question
+answering, "least recently used" for long-term memory management (forget), "all" for
+long-term memory management (remember) and "Dijkstra" search for maze exploration.
 
 ### Best Performing Configuration
 
-_Configuration: QA Policy = most_frequently_used, Explore Policy = dijkstra, MM Long Policy = lfu_
+- QA Policy: most_recently_added
+- Explore Policy: dijkstra
+- MM Forget Policy: lru
+- MM Remember Policy: all
 
 | Memory Size | Mean Score (± Std) |
 | ----------- | ------------------ |
-| 0           | 0.2 (± 0)          |
-| 2           | 124.4 (± 49)       |
-| 4           | 217.4 (± 80)       |
-| 8           | 331.0 (± 71)       |
-| 16          | 415.4 (± 120)      |
-| 32          | 630.0 (± 23)       |
-| 64          | 669.6 (± 7)        |
-| 128         | 660.0 (± 8)        |
-| 256         | 660.6 (± 15)       |
-| 512         | 660.6 (± 5)        |
-| 1024        | 663.8 (± 13)       |
-
-_Configuration: QA Policy = most_frequently_used, Explore Policy = dijkstra, MM Long Policy = lfu_
+| 0           | 32.6 (± 11)        |
+| 2           | 40.8 (± 19)        |
+| 4           | 59.8 (± 3)         |
+| 8           | 142.0 (± 11)       |
+| 16          | 253.8 (± 76)       |
+| 32          | 482.6 (± 42)       |
+| 64          | 598.4 (± 26)       |
+| 128         | 641.8 (± 66)       |
+| 256         | 650.2 (± 23)       |
+| 512         | 641.4 (± 28)       |
+| 1024        | 644.2 (± 31)       |
 
 ## Implementation Approach
 

@@ -124,10 +124,7 @@ def extract_entities_and_relations(sample: list[list]) -> tuple[list[str], list[
         relations.add(relation + "_inv")
         for q_rel, q_entity in quals.items():
             relations.add(q_rel)
-            if isinstance(q_entity, list):
-                entities.add(str(max(q_entity)))
-            else:
-                entities.add(str(round(q_entity)))
+            entities.add(str(q_entity))
 
     entities = sorted(list(entities), reverse=True)
     relations = sorted(list(relations), reverse=True)
@@ -186,6 +183,7 @@ def process_graph(
 
     """
     entities, relations = extract_entities_and_relations(sample)
+    relations.remove("memory_id")  # This is only for symbolic reasoning
     entity_to_idx = {entity: idx for idx, entity in enumerate(entities)}
     relation_to_idx = {relation: idx for idx, relation in enumerate(relations)}
 
@@ -215,7 +213,8 @@ def process_graph(
                 "time_added",
                 "last_accessed",
                 "num_recalled",
-                "memoryID",
+                "memory_id",
+                "derived_from",
             ]
 
             assert (
@@ -227,7 +226,7 @@ def process_graph(
             if q_rel == "current_time":
                 short_memory_idx.append(i)
 
-            if q_rel == "memoryID":  # This is only for symbolic reasoning
+            if q_rel == "memory_id":  # This is only for symbolic reasoning
                 continue
 
             quals.append(

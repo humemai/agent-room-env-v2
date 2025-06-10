@@ -1,12 +1,11 @@
 """A lot copied from https://github.com/migalkin/StarE"""
 
-from typing import Literal
-
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
+from .attention import AttentionAggregator
 from .mlp import MLP
 from .stare_conv import StarEConvLayer
 from .utils import process_graph
@@ -14,8 +13,9 @@ from .utils import process_graph
 
 class GNN(torch.nn.Module):
     """Graph Neural Network model. This model is used to compute the Q-values for the
-    memory management policy. This model has N layers of GCNConv or StarEConv layers and
-    one MLP for the memory management policy.
+    memory management (remember and forget) policies. This model has N layers of GCNConv
+    or StarEConv layers and two MLPs for the two memory management polices,
+    respectively.
 
     Attributes:
         entities: List of entities
@@ -35,7 +35,8 @@ class GNN(torch.nn.Module):
         relu: The ReLU activation function
         drop: The dropout layer
         gcn_layers: The GCN layers
-        mlp: The MLP for memory management policy
+        mlp_mm_forget: The MLP for forget
+        mlp_mm_remember: The MLP for remember
 
     """
 
@@ -43,6 +44,8 @@ class GNN(torch.nn.Module):
         self,
         entities: list[str],
         relations: list[str],
+        mm_forget_policy: str,
+        mm_remember_policy: str,
         gcn_layer_params: dict = {
             "type": "StarE",
             "embedding_dim": 8,
@@ -61,6 +64,8 @@ class GNN(torch.nn.Module):
         Args:
             entities: List of entities
             relations: List of relations
+            mm_forget_policy: memory management policy for forgetting long-term memory
+            mm_remember_policy: memory management policy for remembering long-term memory
             gcn_layer_params: The parameters for the GCN layers
             relu_between_gcn_layers: Whether to apply ReLU activation between GCN layers
             dropout_between_gcn_layers: Whether to apply dropout between GCN layers
@@ -72,6 +77,8 @@ class GNN(torch.nn.Module):
         super(GNN, self).__init__()
         self.entities = entities
         self.relations = relations
+        self.mm_forget_policy = mm_forget_policy.lower()
+        self.mm_remember_policy = mm_remember_policy.lower()
         self.gcn_layer_params = gcn_layer_params
         self.gcn_type = gcn_layer_params["type"].lower()
         self.mlp_params = mlp_params
@@ -151,15 +158,36 @@ class GNN(torch.nn.Module):
         else:
             raise ValueError(f"{self.gcn_type} is not a valid GNN type.")
 
-        self.mlp = MLP(
-            n_actions=2,  # move the short-term to long-term or not
-            input_size=self.embedding_dim * 3,  # [head, relation, tail]
-            hidden_size=self.embedding_dim,
-            device=device,
-            **mlp_params,
-        )
+        if self.mm_forget_policy == "rl":
+            # Add attention aggregator for forget policy
+            self.attention_aggregator = AttentionAggregator(
+                embedding_dim=self.embedding_dim,
+                device=device,
+            )
+            self.mlp_mm_forget = MLP(
+                n_actions=3,  # lru, lfu, fifo
+                input_size=self.embedding_dim,  # aggregated embedding
+                hidden_size=self.embedding_dim,
+                device=device,
+                **mlp_params,
+            )
+        else:
+            self.attention_aggregator = None
+            self.mlp_mm_forget = None
+
+        if self.mm_remember_policy == "rl":
+            self.mlp_mm_remember = MLP(
+                n_actions=2,  # remember, forget
+                input_size=self.embedding_dim * 3,
+                hidden_size=self.embedding_dim,
+                device=device,
+                **mlp_params,
+            )
+        else:
+            self.mlp_mm_remember = None
 
     def process_batch(self, data: np.ndarray) -> tuple[
+        torch.Tensor,
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
@@ -191,6 +219,8 @@ class GNN(torch.nn.Module):
 
             num_short_memories: The number of short-term memories in each sample
 
+            num_entities_per_sample: The number of entities in each sample
+
         """
         entity_embeddings_batch = []
         relation_embeddings_batch = []
@@ -210,6 +240,8 @@ class GNN(torch.nn.Module):
         relation_offset_batch = [0]
         edge_offset_batch = [0]
 
+        num_entities_per_sample = []
+
         for idx, sample in enumerate(data):
             (
                 entities,
@@ -222,6 +254,8 @@ class GNN(torch.nn.Module):
                 quals_inv,
                 short_memory_idx,
             ) = process_graph(sample)
+
+            num_entities_per_sample.append(len(entities))
 
             for entity in entities:
                 entity_embeddings_batch.append(
@@ -323,20 +357,21 @@ class GNN(torch.nn.Module):
             quals,
             short_memory_idx,
             num_short_memories,
+            torch.tensor(num_entities_per_sample),
         )
 
-    def forward(self, data: np.ndarray) -> list[torch.Tensor]:
+    def forward(self, data: np.ndarray) -> dict[str, list[torch.Tensor]]:
         """Forward pass of the GNN model.
 
         Args:
-            data: The input data as a batch.
+            data: The input data as a batch. Because of how it's processed, the data
+            has to have a batch dimension, even if it's a single sample. The shape is
+            [batch_size, num_quadruples, 4], where num_quadruples varies per sample.
 
         Returns:
-            The Q-values. The number of elements in the list is equal to the number of
-            samples in the batch. Each element is a tensor of Q-values for the actions
-            in the sample. The length of the tensor is equal to the number of actions
-            in the sample.
-
+            Dictionary with Q-values for different policies:
+            - 'remember': Q-values for remember policy (if enabled)
+            - 'forget': Q-values for forget policy (if enabled)
         """
         (
             entity_embeddings,
@@ -346,6 +381,7 @@ class GNN(torch.nn.Module):
             quals,
             short_memory_idx,
             num_short_memories,
+            num_entities_per_sample,
         ) = self.process_batch(data)
 
         for layer_ in self.gcn_layers:
@@ -367,30 +403,77 @@ class GNN(torch.nn.Module):
             if self.relu_between_gcn_layers:
                 entity_embeddings = F.relu(entity_embeddings)
 
-        assert num_short_memories.sum() == short_memory_idx.size(0)
-        triple = []
-        for idx in short_memory_idx:
-            triple_ = torch.cat(
-                [
-                    entity_embeddings[edge_idx[0, idx]],
-                    relation_embeddings[edge_type[idx]],
-                    entity_embeddings[edge_idx[1, idx]],
-                ],
-                dim=0,
+        results = {}
+
+        # Handle remember policy
+        if self.mm_remember_policy == "rl":
+            assert num_short_memories.sum() == short_memory_idx.size(0)
+            triple = []
+            for idx in short_memory_idx:
+                triple_ = torch.cat(
+                    [
+                        entity_embeddings[edge_idx[0, idx]],
+                        relation_embeddings[edge_type[idx]],
+                        entity_embeddings[edge_idx[1, idx]],
+                    ],
+                    dim=0,
+                )
+                triple.append(triple_)
+
+            triple = torch.stack(triple, dim=0)
+            q_mm_remember = self.mlp_mm_remember(triple)
+
+            q_mm_remember_batch = [
+                q_mm_remember[start : start + num]
+                for start, num in zip(
+                    num_short_memories.cumsum(0).roll(1), num_short_memories
+                )
+            ]
+            q_mm_remember_batch[0] = q_mm_remember[: num_short_memories[0]]
+            results["remember"] = q_mm_remember_batch
+
+        # Handle forget policy with attention aggregation
+        if self.mm_forget_policy == "rl":
+            # Get the first half of entity embeddings (original, not duplicated)
+            entity_embeddings_first_half = entity_embeddings[
+                : entity_embeddings.size(0) // 2
+            ]
+
+            # Create padded batch for efficient processing
+            max_num_entities = max(num_entities_per_sample)
+            batch_size = len(num_entities_per_sample)
+
+            # Initialize padded tensor
+            padded_embeddings = torch.zeros(
+                batch_size, max_num_entities, self.embedding_dim, device=self.device
             )
-            triple.append(triple_)
 
-        triple = torch.stack(triple, dim=0)
-
-        q_mm_ = self.mlp(triple)
-
-        q_mm = [
-            q_mm_[start : start + num]
-            for start, num in zip(
-                num_short_memories.cumsum(0).roll(1), num_short_memories
+            # Create attention mask
+            attention_mask = torch.zeros(
+                batch_size, max_num_entities, dtype=torch.bool, device=self.device
             )
-        ]
 
-        q_mm[0] = q_mm_[: num_short_memories[0]]
+            # Fill padded tensor and mask
+            start_idx = 0
+            for i, num_entities in enumerate(num_entities_per_sample):
+                padded_embeddings[i, :num_entities] = entity_embeddings_first_half[
+                    start_idx : start_idx + num_entities
+                ]
+                attention_mask[i, :num_entities] = True
+                start_idx += num_entities
 
-        return q_mm
+            # Single batched attention aggregation
+            aggregated_embeddings = self.attention_aggregator(
+                padded_embeddings, attention_mask
+            )  # (batch_size, embedding_dim)
+
+            # Single batched MLP forward pass
+            q_mm_forget = self.mlp_mm_forget(
+                aggregated_embeddings
+            )  # (batch_size, n_actions)
+
+            # Convert back to list format for consistency
+            q_mm_forget_batch = [q_mm_forget[i : i + 1] for i in range(batch_size)]
+            results["forget"] = q_mm_forget_batch
+
+        return results
