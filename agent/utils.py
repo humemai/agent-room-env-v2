@@ -75,9 +75,14 @@ class ReplayBuffer:
             values of dtype=object.
         next_obs_buf (np.ndarray): Buffer for next observations, initialized similarly
             to obs_buf.
-        acts_buf (np.ndarray): Buffer for actions, initialized as an array of None
+        acts_explore_buf (np.ndarray): Buffer for explore actions, initialized as an
+            array of None values of dtype=object.
+        acts_mm_buf (np.ndarray): Buffer for mm actions, initialized as an array of None
             values of dtype=object.
-        rews_buf (np.ndarray): Buffer for rewards.
+        rews_explore_buf (np.ndarray): Buffer for rewards, initialized as an array of
+            zeros of dtype=np.float32.
+        rews_mm_buf (np.ndarray): Buffer for rewards, initialized similarly to
+            rews_explore_buf.
         done_buf (np.ndarray): Buffer for done flags, initialized as an array of zeros
             of dtype=np.float32.
         max_size (int): Maximum size of the buffer.
@@ -88,20 +93,27 @@ class ReplayBuffer:
 
     Example:
     ```
+    from agent.dqn.utils import ReplayBuffer
+    import random
+
     buffer = ReplayBuffer(8, 4)
 
     for _ in range(6):
 
         obs = {str(i): str(random.randint(0, 10)) for i in range(3)}
         next_obs = {str(i): str(random.randint(0, 10)) for i in range(3)}
-        action = [random.randint(0, 3) for _ in range(random.randint(1, 10))]
-        reward = random.randint(0, 1)
+        action_explore = random.randint(0, 4)
+        action_mm = [random.randint(0, 3) for _ in range(random.randint(1, 10))]
+        reward_explore = random.randint(0, 1)
+        reward_mm = random.randint(0, 1)
         done = random.choice([False, True])
         buffer.store(
             *[
                 obs,
-                action,
-                reward,
+                action_explore,
+                action_mm,
+                reward_explore,
+                reward_mm,
                 next_obs,
                 done,
             ]
@@ -116,13 +128,15 @@ class ReplayBuffer:
     'next_obs': array([{'0': '10', '1': '0', '2': '2'}, {'0': '9', '1': '2', '2': '4'},
             {'0': '1', '1': '7', '2': '1'}, {'0': '8', '1': '9', '2': '0'}],
         dtype=object),
-    'acts': array([np.array([2, 0, 2, 1, 3]), np.array([0, 1, 2]),
+    'acts_explore': array([4., 3., 2., 2.], dtype=float32),
+    'acts_mm': array([np.array([2, 0, 2, 1, 3]), np.array([0, 1, 2]),
             np.array([0, 1, 3, 1, 1, 2, 2]), np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])],
         dtype=object),
-    'rews': array([0., 1., 1., 0.], dtype=float32),
+    'rews_explore': array([0., 1., 1., 0.], dtype=float32),
+    'rews_mm': array([0., 1., 1., 0.], dtype=float32),
     'done': array([1., 0., 1., 1.], dtype=float32)}
 
-    >>> sample["acts"].shape
+    >>> sample["acts_mm"].shape
     (4,)
 
     """
@@ -142,7 +156,7 @@ class ReplayBuffer:
             ValueError: If batch_size is greater than size.
 
         Note:
-            The obs_buf, next_obs_buf, and acts_buf are initialized with `None`
+            The obs_buf, next_obs_buf, and acts_mm_buf are initialized with `None`
             values and have `dtype=object` to accommodate arbitrary Python objects,
             ensuring flexibility in storing different types of data.
 
@@ -153,8 +167,10 @@ class ReplayBuffer:
 
         self.obs_buf = np.array([None] * size, dtype=object)
         self.next_obs_buf = np.array([None] * size, dtype=object)
-        self.acts_buf = np.array([None] * size, dtype=object)
-        self.rews_buf = np.zeros([size], dtype=np.float32)
+        self.acts_explore_buf = np.zeros([size], dtype=int)
+        self.acts_mm_buf = np.array([None] * size, dtype=object)
+        self.rews_explore_buf = np.zeros([size], dtype=np.float32)
+        self.rews_mm_buf = np.zeros([size], dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.max_size, self.batch_size = size, batch_size
         (
@@ -168,8 +184,10 @@ class ReplayBuffer:
     def store(
         self,
         obs: np.ndarray,
-        act: np.ndarray,
-        rew: float,
+        act_explore: np.ndarray,
+        act_mm: np.ndarray,
+        rew_explore: float,
+        rew_mm: float,
         next_obs: np.ndarray,
         done: bool,
     ) -> None:
@@ -177,16 +195,20 @@ class ReplayBuffer:
 
         Args:
             obs: observation
-            act: action
-            rew: reward
+            act_explore: explore action
+            act_mm: memory management action
+            rew_explore: reward for explore
+            rew_mm: reward for memory management
             next_obs: next observation
             done: done
 
         """
         self.obs_buf[self.ptr] = obs
         self.next_obs_buf[self.ptr] = next_obs
-        self.acts_buf[self.ptr] = act
-        self.rews_buf[self.ptr] = rew
+        self.acts_explore_buf[self.ptr] = act_explore
+        self.acts_mm_buf[self.ptr] = act_mm
+        self.rews_explore_buf[self.ptr] = rew_explore
+        self.rews_mm_buf[self.ptr] = rew_mm
         self.done_buf[self.ptr] = done
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
@@ -198,8 +220,10 @@ class ReplayBuffer:
             A dictionary of samples from the replay buffer.
                 obs: np.ndarray,
                 next_obs: np.ndarray,
-                acts: np.ndarray,
-                rews: np.ndarray,
+                acts_explore: np.ndarray,
+                acts_mm: np.ndarray,
+                rews_explore: np.ndarray,
+                rews_mm: np.ndarray,
                 done: np.ndarray
 
         """
@@ -207,8 +231,10 @@ class ReplayBuffer:
         return dict(
             obs=self.obs_buf[idxs],
             next_obs=self.next_obs_buf[idxs],
-            acts=self.acts_buf[idxs],
-            rews=self.rews_buf[idxs],
+            acts_explore=self.acts_explore_buf[idxs],
+            acts_mm=self.acts_mm_buf[idxs],
+            rews_explore=self.rews_explore_buf[idxs],
+            rews_mm=self.rews_mm_buf[idxs],
             done=self.done_buf[idxs],
         )
 
@@ -218,14 +244,15 @@ class ReplayBuffer:
 
 def plot_results(
     scores: dict[str, list[float]],
-    training_loss: list[float],
+    training_loss: dict[str, list[float]],
     epsilons: list[float],
-    q_values: dict[str, list[float]],
+    q_values: dict[str, dict[str, list[float]]],
     iteration_idx: int,
     num_iterations: int,
     total_maximum_episode_rewards: int,
     default_root_dir: str,
-    action2str: dict[int, str],
+    action_mm2str,
+    action_explore2str,
     to_plot: str = "all",
     save_fig: bool = False,
 ) -> None:
@@ -233,14 +260,15 @@ def plot_results(
 
     Args:
         scores: a dictionary of scores for train, validation, and test.
-        training_loss: a list of training losses.
+        training_loss: a dict of training losses for all, mm, and explore.
         epsilons: a list of epsilons.
         q_values: a dictionary of q_values for train, validation, and test.
         iteration_idx: the current iteration index.
         num_iterations: the total number of iterations.
         total_maximum_episode_rewards: the total maximum episode rewards.
         default_root_dir: the root directory where the results are saved.
-        action2str: a dictionary to convert actions to strings.
+        action_mm2str: a dictionary to convert mm actions to strings.
+        action_explore2str: a dictionary to convert explore actions to strings.
         to_plot: what to plot:
             "all": plot everything
             "training_td_loss": plot training td loss
@@ -258,9 +286,9 @@ def plot_results(
         clear_output(True)
 
     if to_plot == "all":
-        plt.figure(figsize=(20, 13))
+        plt.figure(figsize=(20, 20))
 
-        plt.subplot(233)
+        plt.subplot(333)
         if scores["train"]:
             plt.title(
                 f"iteration {iteration_idx} out of {num_iterations}. "
@@ -291,27 +319,45 @@ def plot_results(
             plt.xlabel("episode")
         plt.legend(loc="best")
 
-        plt.subplot(231)
+        plt.subplot(331)
         plt.title("training td loss (log scale)")
-        plt.plot(training_loss)
+        plt.plot(training_loss["total"], label="total")
+        plt.plot(training_loss["mm"], label="mm")
+        plt.plot(training_loss["explore"], label="explore")
         plt.yscale("log")  # Set y-axis to log scale
         plt.xlabel("update counts")
+        plt.legend(loc="best")
 
-        plt.subplot(232)
+        plt.subplot(332)
         plt.title("epsilons")
         plt.plot(epsilons)
         plt.xlabel("update counts")
 
-        for subplot_num, split in zip([234, 235, 236], ["train", "val", "test"]):
+        for subplot_num, split in zip([334, 335, 336], ["train", "val", "test"]):
             plt.subplot(subplot_num)
-            plt.title(f"Q-values, {split}")
-            for action_number in range(2):
+            plt.title(f"Q-values (mm), {split}")
+            for action_number in range(3):
                 plt.plot(
                     [
-                        q_value_[action_number]
-                        for q_value_ in q_values[split]
+                        q[action_number]
+                        for q_value_ in q_values[split]["mm"]
+                        for q in q_value_
                     ],
-                    label=action2str[action_number],
+                    label=action_mm2str[action_number],
+                )
+            plt.legend(loc="best")
+            plt.xlabel("number of actions")
+
+        for subplot_num, split in zip([337, 338, 339], ["train", "val", "test"]):
+            plt.subplot(subplot_num)
+            plt.title(f"Q-values (explore), {split}")
+            for action_number in range(5):
+                plt.plot(
+                    [
+                        q_value_[0][action_number]
+                        for q_value_ in q_values[split]["explore"]
+                    ],
+                    label=action_explore2str[action_number],
                 )
             plt.legend(loc="best")
             plt.xlabel("number of actions")
@@ -329,8 +375,11 @@ def plot_results(
     elif to_plot == "training_td_loss":
         plt.figure()
         plt.title("training td loss")
-        plt.plot(training_loss)
+        plt.plot(training_loss["total"], label="total")
+        plt.plot(training_loss["mm"], label="mm")
+        plt.plot(training_loss["explore"], label="explore")
         plt.xlabel("update counts")
+        plt.legend(loc="best")
         plt.subplots_adjust(hspace=0.5)
 
     elif to_plot == "epsilons":
@@ -375,14 +424,28 @@ def plot_results(
         plt.subplots_adjust(hspace=0.5)
 
     else:
-        plt.figure(figsize=(20, 6))
+        plt.figure(figsize=(20, 13))
 
-        for subplot_num, split in zip([131, 132, 133], ["train", "val", "test"]):
+        for subplot_num, split in zip([231, 232, 233], ["train", "val", "test"]):
             plt.subplot(subplot_num)
-            plt.title(f"Q-values, {split}")
-            for action_number in range(2):
+            plt.title(f"Q-values (mm), {split}")
+            for action_number in range(3):
                 plt.plot(
-                    [q_value_[action_number] for q_value_ in q_values[split]],
+                    [q_value_[action_number] for q_value_ in q_values[split]["mm"]],
+                    label=f"action {action_number}",
+                )
+            plt.legend(loc="best")
+            plt.xlabel("number of actions")
+
+        for subplot_num, split in zip([234, 235, 236], ["train", "val", "test"]):
+            plt.subplot(subplot_num)
+            plt.title(f"Q-values (explore), {split}")
+            for action_number in range(5):
+                plt.plot(
+                    [
+                        q_value_[action_number]
+                        for q_value_ in q_values[split]["explore"]
+                    ],
                     label=f"action {action_number}",
                 )
             plt.legend(loc="best")
@@ -420,15 +483,15 @@ def console(
             f"{total_maximum_episode_rewards}"
         )
 
-    tqdm.write(f"training loss: {training_loss[-1]}\n")
+    tqdm.write(f"training loss (all): {training_loss['total'][-1]}\n")
     print()
 
 
 def save_final_results(
     scores: dict[str, list[float]],
-    training_loss: list[float],
+    training_loss: dict[str, list[float]],
     default_root_dir: str,
-    q_values: dict[str, list[float]],
+    q_values: dict[str, dict[str, list[float]]],
     self: object,
     save_the_agent: bool = False,
 ) -> None:
@@ -436,7 +499,8 @@ def save_final_results(
 
     Args:
         scores: a dictionary of scores for train, validation, and test.
-        training_loss: a list of training losses.
+        training_loss: a dict of training losses for all, mm, and explore.
+        training_loss_explore: a list of training losses for explore.
         default_root_dir: the root directory where the results are saved.
         q_values: a dictionary of q_values for train, validation, and test.
         self: the agent object.
@@ -461,7 +525,8 @@ def save_final_results(
     write_yaml(results, os.path.join(default_root_dir, "results.yaml"))
 
     q_values_list = {
-        key: [val_.tolist() for val_ in val] for key, val in q_values.items()
+        key: {key_: [val__.tolist() for val__ in val_] for key_, val_ in val.items()}
+        for key, val in q_values.items()
     }
 
     write_yaml(q_values_list, os.path.join(default_root_dir, "q_values.yaml"))
@@ -469,7 +534,7 @@ def save_final_results(
         write_pickle(self, os.path.join(default_root_dir, "agent.pkl"))
 
 
-def compute_loss(
+def compute_loss_mm(
     batch: dict,
     device: str,
     dqn: torch.nn.Module,
@@ -477,7 +542,7 @@ def compute_loss(
     ddqn: str,
     gamma: float,
 ) -> torch.Tensor:
-    r"""Return the DQN td loss
+    r"""Return the DQN td loss for the memory management policy.
 
     G_t   = r + gamma * v(s_{t+1})  if state != Terminal
           = r                       otherwise
@@ -496,7 +561,7 @@ def compute_loss(
         gamma: discount factor
 
     Returns:
-        loss: TD loss
+        loss_mm: TD loss for memory management
 
     """
     state = batch["obs"]
@@ -506,13 +571,13 @@ def compute_loss(
     done = torch.FloatTensor(batch["done"]).to(device)
 
     # Forward pass on current state to get Q-values
-    q_value_current = dqn(state)
+    q_value_current = dqn(state, policy_type="mm")
 
     # Forward pass on next state to get Q-values
-    q_value_next = dqn_target(state_next)
+    q_value_next = dqn_target(state_next, policy_type="mm")
 
     if ddqn:
-        q_value_for_action = dqn(state_next)
+        q_value_for_action = dqn(state_next, policy_type="mm")
 
     q_value_current_batch = []
     q_value_target_batch = []
@@ -554,6 +619,74 @@ def compute_loss(
     return loss
 
 
+def compute_loss_explore(
+    batch: dict,
+    device: str,
+    dqn: torch.nn.Module,
+    dqn_target: torch.nn.Module,
+    ddqn: str,
+    gamma: float,
+) -> torch.Tensor:
+    r"""Return the DQN td loss for explore policy.
+
+    G_t   = r + gamma * v(s_{t+1})  if state != Terminal
+          = r                       otherwise
+
+    Args:
+        batch: A dictionary of samples from the replay buffer.
+            obs: np.ndarray,
+            acts: np.ndarray,
+            rews: float,
+            next_obs: np.ndarray,
+            done: bool,
+        device: cpu or cuda
+        dqn: dqn model
+        dqn_target: dqn target model
+        ddqn: whether to use double dqn or not
+        gamma: discount factor
+
+    Returns:
+        loss: TD loss for the explore policy
+
+    """
+
+    state = batch["obs"]
+    state_next = batch["next_obs"]
+    action = torch.LongTensor(batch["acts"].reshape(-1, 1)).to(device)
+    reward = torch.FloatTensor(batch["rews"]).reshape(-1, 1).to(device)
+    done = torch.FloatTensor(batch["done"]).reshape(-1, 1).to(device)
+
+    # Forward pass on current state to get Q-values
+    q_value_current = dqn(state, policy_type="explore")
+
+    q_value_current = torch.concat(q_value_current)
+    q_value_current = q_value_current.gather(1, action)
+
+    q_value_next = dqn_target(state_next, policy_type="explore")
+    q_value_next = torch.concat(q_value_next)
+
+    if ddqn:
+        # Double DQN: Use current DQN to select actions, target DQN to evaluate those
+        # actions
+        q_value_for_action = dqn(state_next, policy_type="explore")
+        q_value_for_action = torch.concat(q_value_for_action)
+        action_next = q_value_for_action.argmax(dim=1, keepdim=True)
+        q_value_next = q_value_next.gather(1, action_next).detach()
+    else:
+        # Vanilla DQN: Use target DQN to get max Q-value for next state
+        q_value_next = q_value_next.max(dim=1, keepdim=True)[0].detach()
+
+    # Compute the target Q-values considering whether the state is terminal
+    q_value_target = reward + gamma * q_value_next * (1 - done)
+
+    assert q_value_current.shape == q_value_target.shape
+
+    # Calculate loss
+    loss = F.smooth_l1_loss(q_value_current, q_value_target)
+
+    return loss
+
+
 def update_model(
     replay_buffer: ReplayBuffer,
     optimizer: torch.optim.Adam,
@@ -561,8 +694,8 @@ def update_model(
     dqn: torch.nn.Module,
     dqn_target: torch.nn.Module,
     ddqn: str,
-    gamma: float,
-) -> float:
+    gamma: dict[str, float],
+) -> tuple[float, float, float]:
     r"""Update the model by gradient descent.
 
     Args:
@@ -575,27 +708,47 @@ def update_model(
         gamma: discount factor
 
     Returns:
-        loss: TD loss,
+        loss_mm, loss_explore, loss_combined: TD losses for memory management,
+            explore and combined
 
     """
     batch = replay_buffer.sample_batch()
-    batch = {
+    batch_mm = {
         "obs": batch["obs"],
-        "acts": batch["acts"],
-        "rews": batch["rews"],
+        "acts": batch["acts_mm"],
+        "rews": batch["rews_mm"],
+        "next_obs": batch["next_obs"],
+        "done": batch["done"],
+    }
+    batch_explore = {
+        "obs": batch["obs"],
+        "acts": batch["acts_explore"],
+        "rews": batch["rews_explore"],
         "next_obs": batch["next_obs"],
         "done": batch["done"],
     }
 
-    loss = compute_loss(batch, device, dqn, dqn_target, ddqn, gamma)
+    loss_mm = compute_loss_mm(batch_mm, device, dqn, dqn_target, ddqn, gamma["mm"])
+    loss_explore = compute_loss_explore(
+        batch_explore,
+        device,
+        dqn,
+        dqn_target,
+        ddqn,
+        gamma["explore"],
+    )
+
+    loss = loss_mm + loss_explore
 
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
+    loss_mm = loss_mm.detach().cpu().numpy().item()
+    loss_explore = loss_explore.detach().cpu().numpy().item()
     loss = loss.detach().cpu().numpy().item()
 
-    return loss
+    return loss_mm, loss_explore, loss
 
 
 def select_action(
@@ -603,6 +756,7 @@ def select_action(
     greedy: bool,
     dqn: torch.nn.Module,
     epsilon: float,
+    policy_type: Literal["mm", "explore"],
 ) -> tuple[np.ndarray, np.ndarray]:
     r"""Select action(s) from the input state, with epsilon-greedy policy.
 
@@ -613,6 +767,7 @@ def select_action(
         greedy: always pick greedy action if True
         dqn: dqn model
         epsilon: epsilon
+        policy_type: "mm" or "explore"
 
     Returns:
         selected_actions: dimension is [num_actions_taken]
@@ -620,7 +775,7 @@ def select_action(
 
     """
     # Since dqn requires a batch dimension, we need to encapsulate the state in a list
-    q_values = dqn(np.array([state], dtype=object))
+    q_values = dqn(np.array([state], dtype=object), policy_type=policy_type)
 
     q_values = q_values[0]  # remove the dummy batch dimension
     q_values = q_values.detach().cpu().numpy()
@@ -647,6 +802,7 @@ def save_validation(
     r"""Keep the best validation model.
 
     Args:
+        policy: "mm", "explore", or None.
         scores_temp: a list of validation scores for the current validation episode.
         scores: a dictionary of scores for train, validation, and test.
         default_root_dir: the root directory where the results are saved.
@@ -682,10 +838,11 @@ def save_validation(
             val_file_names.remove(fn)
 
 
+
 def save_states_q_values_actions(
     states: list[list[list]],
-    q_values: list[np.ndarray],
-    actions: list[np.ndarray],
+    q_values: list[dict],
+    actions: list[dict],
     default_root_dir: str,
     val_or_test: str,
     num_episodes: int | None = None,
@@ -713,8 +870,10 @@ def save_states_q_values_actions(
     to_save = [
         {
             "state": s,
-            "q_values": q.tolist(),
-            "action": a.tolist(),
+            "q_values_explore": q["explore"].tolist(),
+            "action_explore": a["explore"].tolist(),
+            "q_values_mm": q["mm"].tolist(),
+            "action_mm": a["mm"].tolist(),
         }
         for s, q, a in zip(states, q_values, actions)
     ]
@@ -754,3 +913,4 @@ def update_epsilon(
     )
 
     return epsilon
+
