@@ -123,6 +123,8 @@ def extract_entities_and_relations(sample: list[list]) -> tuple[list[str], list[
         relations.add(relation)
         relations.add(relation + "_inv")
         for q_rel, q_entity in quals.items():
+            if q_rel == "memory_id":  # This is only for symbolic reasoning
+                continue
             relations.add(q_rel)
             entities.add(str(q_entity))
 
@@ -134,6 +136,7 @@ def extract_entities_and_relations(sample: list[list]) -> tuple[list[str], list[
 
 def process_graph(
     sample: list[list],
+    device: str = "cpu",
 ) -> tuple[
     list,
     list,
@@ -183,7 +186,6 @@ def process_graph(
 
     """
     entities, relations = extract_entities_and_relations(sample)
-    relations.remove("memory_id")  # This is only for symbolic reasoning
     entity_to_idx = {entity: idx for idx, entity in enumerate(entities)}
     relation_to_idx = {relation: idx for idx, relation in enumerate(relations)}
 
@@ -246,11 +248,11 @@ def process_graph(
     return (
         entities,
         relations,
-        torch.tensor(edge_idx).T,
-        torch.tensor(edge_type),
-        torch.tensor(quals).T,
-        torch.tensor(edge_idx_inv).T,
-        torch.tensor(edge_type_inv),
-        torch.tensor(quals_inv).T,
-        torch.tensor(short_memory_idx),
+        torch.tensor(edge_idx, device=device).T,
+        torch.tensor(edge_type, device=device),
+        torch.tensor(quals, device=device).T,
+        torch.tensor(edge_idx_inv, device=device).T,
+        torch.tensor(edge_type_inv, device=device),
+        torch.tensor(quals_inv, device=device).T,
+        torch.tensor(short_memory_idx, device=device),
     )

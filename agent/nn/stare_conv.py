@@ -34,6 +34,7 @@ class StarEConvLayer(MessagePassing):
         num_rels: int,
         gcn_drop: float = 0.1,
         triple_qual_weight: float = 0.8,
+        device: str = "cpu",
     ):
         """Initialize the StarEConvLayer.
 
@@ -43,26 +44,26 @@ class StarEConvLayer(MessagePassing):
             num_rels: The number of relations.
             gcn_drop: The dropout probability.
             triple_qual_weight: The weight for the triple and qualifier embeddings.
+            device: The device to use for computations.
         """
         super(StarEConvLayer, self).__init__(flow="target_to_source", aggr="add")
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_rels = num_rels
-        self.device = None
+        self.device = device
 
-        # Initialize weights
-        self.w_loop = torch.nn.Parameter(torch.Tensor(in_channels, out_channels))
-        self.w_in = torch.nn.Parameter(torch.Tensor(in_channels, out_channels))
-        self.w_out = torch.nn.Parameter(torch.Tensor(in_channels, out_channels))
-        self.w_rel = torch.nn.Parameter(torch.Tensor(in_channels, out_channels))
-        self.w_q = torch.nn.Parameter(torch.Tensor(in_channels, in_channels))
+        self.w_loop = torch.nn.Parameter(torch.Tensor(in_channels, out_channels).to(device))
+        self.w_in = torch.nn.Parameter(torch.Tensor(in_channels, out_channels).to(device))
+        self.w_out = torch.nn.Parameter(torch.Tensor(in_channels, out_channels).to(device))
+        self.w_rel = torch.nn.Parameter(torch.Tensor(in_channels, out_channels).to(device))
+        self.w_q = torch.nn.Parameter(torch.Tensor(in_channels, in_channels).to(device))
 
-        self.loop_rel = torch.nn.Parameter(torch.Tensor(1, in_channels))
-        self.loop_ent = torch.nn.Parameter(torch.Tensor(1, in_channels))
+        self.loop_rel = torch.nn.Parameter(torch.Tensor(1, in_channels).to(device))
+        self.loop_ent = torch.nn.Parameter(torch.Tensor(1, in_channels).to(device))
 
         self.drop = torch.nn.Dropout(gcn_drop)
-        self.bn = torch.nn.BatchNorm1d(out_channels)
+        self.bn = torch.nn.BatchNorm1d(out_channels).to(device)
 
         self.triple_qual_weight = triple_qual_weight
 
@@ -109,7 +110,8 @@ class StarEConvLayer(MessagePassing):
         if self.device is None:
             self.device = edge_idx.device
 
-        rel_embed = torch.cat([relation_embeddings, self.loop_rel], dim=0)
+        loop_rel = self.loop_rel.to(relation_embeddings.device)
+        rel_embed = torch.cat([relation_embeddings, loop_rel], dim=0)
         num_edges = edge_idx.size(1) // 2
         num_ent = entity_embeddings.size(0)
 
@@ -135,11 +137,11 @@ class StarEConvLayer(MessagePassing):
 
         # Self edges between all the nodes
         self.loop_index = torch.stack(
-            [torch.arange(num_ent), torch.arange(num_ent)]
-        ).to(self.device)
+            [torch.arange(num_ent, device=self.device), torch.arange(num_ent, device=self.device)]
+        )
         self.loop_type = torch.full(
-            (num_ent,), rel_embed.size(0) - 1, dtype=torch.long
-        ).to(self.device)
+            (num_ent,), rel_embed.size(0) - 1, dtype=torch.long, device=self.device
+        )
 
         self.in_norm = self.compute_norm(self.in_index, num_ent)
         self.out_norm = self.compute_norm(self.out_index, num_ent)

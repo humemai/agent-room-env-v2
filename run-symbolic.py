@@ -13,10 +13,10 @@ logging.getLogger().setLevel(logging.CRITICAL)
 
 
 def run_long_term_experiment(params):
-    seed, room_size, qa_policy, explore_policy, mm_forget_policy, max_memory = params
+    seed, room_size, qa_policy, explore_policy, forget_policy, max_memory = params
     print(
         f"Seed: {seed}, Room size: {room_size}, QA: {qa_policy}, Explore: {explore_policy}, "
-        f"MM: {mm_forget_policy}, Max memory: {max_memory}"
+        f"MM: {forget_policy}, Max memory: {max_memory}"
     )
 
     agent = LongTermAgent(
@@ -35,7 +35,7 @@ def run_long_term_experiment(params):
         },
         qa_policy=qa_policy,
         explore_policy=explore_policy,
-        mm_forget_policy=mm_forget_policy,
+        forget_policy=forget_policy,
         max_long_term_memory_size=max_memory,
         num_samples_for_results=1,
         default_root_dir="./training-results-symbolic/",

@@ -35,8 +35,8 @@ class GNN(torch.nn.Module):
         relu: The ReLU activation function
         drop: The dropout layer
         gcn_layers: The GCN layers
-        mlp_mm_forget: The MLP for forget
-        mlp_mm_remember: The MLP for remember
+        mlp_forget: The MLP for forget
+        mlp_remember: The MLP for remember
 
     """
 
@@ -44,8 +44,6 @@ class GNN(torch.nn.Module):
         self,
         entities: list[str],
         relations: list[str],
-        mm_forget_policy: str,
-        mm_remember_policy: str,
         gcn_layer_params: dict = {
             "type": "StarE",
             "embedding_dim": 8,
@@ -64,8 +62,6 @@ class GNN(torch.nn.Module):
         Args:
             entities: List of entities
             relations: List of relations
-            mm_forget_policy: memory management policy for forgetting long-term memory
-            mm_remember_policy: memory management policy for remembering long-term memory
             gcn_layer_params: The parameters for the GCN layers
             relu_between_gcn_layers: Whether to apply ReLU activation between GCN layers
             dropout_between_gcn_layers: Whether to apply dropout between GCN layers
@@ -77,8 +73,6 @@ class GNN(torch.nn.Module):
         super(GNN, self).__init__()
         self.entities = entities
         self.relations = relations
-        self.mm_forget_policy = mm_forget_policy.lower()
-        self.mm_remember_policy = mm_remember_policy.lower()
         self.gcn_layer_params = gcn_layer_params
         self.gcn_type = gcn_layer_params["type"].lower()
         self.mlp_params = mlp_params
@@ -130,6 +124,7 @@ class GNN(torch.nn.Module):
                         num_rels=len(relations),
                         gcn_drop=self.gcn_layer_params["gcn_drop"],
                         triple_qual_weight=self.gcn_layer_params["triple_qual_weight"],
+                        device=device,
                     )
                     for _ in range(self.gcn_layer_params["num_layers"])
                 ]
@@ -158,33 +153,29 @@ class GNN(torch.nn.Module):
         else:
             raise ValueError(f"{self.gcn_type} is not a valid GNN type.")
 
-        if self.mm_forget_policy == "rl":
-            # Add attention aggregator for forget policy
-            self.attention_aggregator = AttentionAggregator(
-                embedding_dim=self.embedding_dim,
-                device=device,
-            )
-            self.mlp_mm_forget = MLP(
-                n_actions=3,  # lru, lfu, fifo
-                input_size=self.embedding_dim,  # aggregated embedding
-                hidden_size=self.embedding_dim,
-                device=device,
-                **mlp_params,
-            )
-        else:
-            self.attention_aggregator = None
-            self.mlp_mm_forget = None
+        # Add attention aggregator for forget policy
+        self.attention_aggregator = AttentionAggregator(
+            embedding_dim=self.embedding_dim,
+            device=device,
+        )
+        self.mlp_forget = MLP(
+            n_actions=3,  # lru, lfu, fifo
+            input_size=self.embedding_dim,  # aggregated embedding
+            hidden_size=self.embedding_dim,
+            device=device,
+            **mlp_params,
+        )
 
-        if self.mm_remember_policy == "rl":
-            self.mlp_mm_remember = MLP(
-                n_actions=2,  # remember, forget
-                input_size=self.embedding_dim * 3,
-                hidden_size=self.embedding_dim,
-                device=device,
-                **mlp_params,
-            )
-        else:
-            self.mlp_mm_remember = None
+        self.mlp_remember = MLP(
+            n_actions=2,  # remember, forget
+            input_size=self.embedding_dim * 3,
+            hidden_size=self.embedding_dim,
+            device=device,
+            **mlp_params,
+        )
+
+        # Move the entire model to the specified device
+        self.to(self.device)
 
     def process_batch(self, data: np.ndarray) -> tuple[
         torch.Tensor,
@@ -253,7 +244,7 @@ class GNN(torch.nn.Module):
                 edge_type_inv,
                 quals_inv,
                 short_memory_idx,
-            ) = process_graph(sample)
+            ) = process_graph(sample, device=self.device)
 
             num_entities_per_sample.append(len(entities))
 
@@ -303,7 +294,7 @@ class GNN(torch.nn.Module):
         )
 
         edge_idx_batch = [a + b for a, b in zip(edge_idx_batch, entity_offset_batch)]
-        edge_idx_batch = torch.cat(edge_idx_batch, dim=1)
+        edge_idx_batch = torch.cat(edge_idx_batch, dim=1).to(self.device)
 
         edge_idx_batch_inv = torch.cat(
             [
@@ -311,13 +302,13 @@ class GNN(torch.nn.Module):
                 for a, b in zip(edge_idx_inv_batch, entity_offset_batch)
             ],
             dim=1,
-        )
+        ).to(self.device)
         edge_idx = torch.cat([edge_idx_batch, edge_idx_batch_inv], dim=1)
 
         edge_type_batch = [
             a + b for a, b in zip(edge_type_batch, relation_offset_batch)
         ]
-        edge_type_batch = torch.cat(edge_type_batch, dim=0)
+        edge_type_batch = torch.cat(edge_type_batch, dim=0).to(self.device)
 
         edge_type_batch_inv = torch.cat(
             [
@@ -325,12 +316,12 @@ class GNN(torch.nn.Module):
                 for a, b in zip(edge_type_inv_batch, relation_offset_batch)
             ],
             dim=0,
-        )
+        ).to(self.device)
         edge_type = torch.cat([edge_type_batch, edge_type_batch_inv], dim=0)
 
         quals_batch = torch.cat(
             [
-                a + torch.tensor([c, b, d]).reshape(-1, 1)
+                a + torch.tensor([c, b, d], device=self.device).reshape(-1, 1)
                 for a, b, c, d in zip(
                     quals_batch,
                     entity_offset_batch,
@@ -339,15 +330,16 @@ class GNN(torch.nn.Module):
                 )
             ],
             dim=1,
-        )
+        ).to(self.device)
         quals = quals_batch.repeat(1, 2)
 
         num_short_memories = torch.tensor(
-            [len(short_memory_idx) for short_memory_idx in short_memory_idx_batch]
+            [len(short_memory_idx) for short_memory_idx in short_memory_idx_batch],
+            device=self.device
         )
         short_memory_idx = torch.cat(
             [a + b for a, b in zip(short_memory_idx_batch, edge_offset_batch)], dim=0
-        )
+        ).to(self.device)
 
         return (
             entity_embeddings,
@@ -357,21 +349,22 @@ class GNN(torch.nn.Module):
             quals,
             short_memory_idx,
             num_short_memories,
-            torch.tensor(num_entities_per_sample),
+            torch.tensor(num_entities_per_sample, device=self.device),
         )
 
-    def forward(self, data: np.ndarray) -> dict[str, list[torch.Tensor]]:
+    def forward(self, data: np.ndarray, policy_type: str) -> list[torch.Tensor]:
         """Forward pass of the GNN model.
 
         Args:
             data: The input data as a batch. Because of how it's processed, the data
-            has to have a batch dimension, even if it's a single sample. The shape is
-            [batch_size, num_quadruples, 4], where num_quadruples varies per sample.
+                has to have a batch dimension, even if it's a single sample. The shape
+                is [batch_size, num_quadruples, 4], where num_quadruples varies per
+                sample.
+            policy_type: The type of policy to compute Q-values for. Can be 'remember'
+                or 'forget'.
 
         Returns:
-            Dictionary with Q-values for different policies:
-            - 'remember': Q-values for remember policy (if enabled)
-            - 'forget': Q-values for forget policy (if enabled)
+            Q-values for different policies:
         """
         (
             entity_embeddings,
@@ -403,10 +396,9 @@ class GNN(torch.nn.Module):
             if self.relu_between_gcn_layers:
                 entity_embeddings = F.relu(entity_embeddings)
 
-        results = {}
-
         # Handle remember policy
-        if self.mm_remember_policy == "rl":
+        if policy_type == "remember":
+
             assert num_short_memories.sum() == short_memory_idx.size(0)
             triple = []
             for idx in short_memory_idx:
@@ -421,19 +413,20 @@ class GNN(torch.nn.Module):
                 triple.append(triple_)
 
             triple = torch.stack(triple, dim=0)
-            q_mm_remember = self.mlp_mm_remember(triple)
+            q_remember = self.mlp_remember(triple)
 
-            q_mm_remember_batch = [
-                q_mm_remember[start : start + num]
+            q_remember_batch = [
+                q_remember[start : start + num]
                 for start, num in zip(
                     num_short_memories.cumsum(0).roll(1), num_short_memories
                 )
             ]
-            q_mm_remember_batch[0] = q_mm_remember[: num_short_memories[0]]
-            results["remember"] = q_mm_remember_batch
+            q_remember_batch[0] = q_remember[: num_short_memories[0]]
+
+            return q_remember_batch
 
         # Handle forget policy with attention aggregation
-        if self.mm_forget_policy == "rl":
+        elif policy_type == "forget":
             # Get the first half of entity embeddings (original, not duplicated)
             entity_embeddings_first_half = entity_embeddings[
                 : entity_embeddings.size(0) // 2
@@ -468,12 +461,14 @@ class GNN(torch.nn.Module):
             )  # (batch_size, embedding_dim)
 
             # Single batched MLP forward pass
-            q_mm_forget = self.mlp_mm_forget(
-                aggregated_embeddings
-            )  # (batch_size, n_actions)
+            q_forget = self.mlp_forget(aggregated_embeddings)  # (batch_size, n_actions)
 
             # Convert back to list format for consistency
-            q_mm_forget_batch = [q_mm_forget[i : i + 1] for i in range(batch_size)]
-            results["forget"] = q_mm_forget_batch
+            q_forget_batch = [q_forget[i : i + 1] for i in range(batch_size)]
 
-        return results
+            return q_forget_batch
+
+        else:
+            raise ValueError(
+                f"{policy_type} is not a valid policy type. Use 'remember' or 'forget'."
+            )
