@@ -62,7 +62,7 @@ def run_dqn_experiment(params):
                 "gcn_drop": 0.1,
                 "triple_qual_weight": 0.8,
             },
-            "relu_between_gcn_layers": True,
+            "silu_between_gcn_layers": True,
             "dropout_between_gcn_layers": True,
             "mlp_params": {"num_hidden_layers": 2, "dueling_dqn": True},
         },
@@ -81,18 +81,21 @@ if __name__ == "__main__":
     test_seeds = [0, 1, 2, 3, 4]
     gcn_types = ["stare"]
     max_memories = [16, 32, 64]
-    forget_policies = ["lru", "rl"]
-    remember_policies = ["all", "rl"]
+    policy_combinations = [("lru", "rl"), ("rl", "all"), ("rl", "rl")]
 
     all_combinations = list(
-        itertools.product(
-            test_seeds, gcn_types, max_memories, forget_policies, remember_policies
-        )
+        itertools.product(test_seeds, gcn_types, max_memories, policy_combinations)
     )
+
+    # Flatten the policy combinations
+    all_combinations = [
+        (seed, gcn_type, memory, forget_policy, remember_policy)
+        for seed, gcn_type, memory, (forget_policy, remember_policy) in all_combinations
+    ]
 
     random.shuffle(all_combinations)
 
     num_processes = multiprocessing.cpu_count()  # or choose a fixed number
-    num_processes = 16
+    num_processes = 10
     with multiprocessing.Pool(num_processes) as pool:
         pool.map(run_dqn_experiment, all_combinations)

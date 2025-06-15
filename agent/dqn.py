@@ -64,7 +64,7 @@ class DQNAgent(LongTermAgent):
                 "gcn_drop": 0.1,
                 "triple_qual_weight": 0.8,
             },
-            "relu_between_gcn_layers": True,
+            "silu_between_gcn_layers": True,
             "dropout_between_gcn_layers": True,
             "mlp_params": {"num_hidden_layers": 2, "dueling_dqn": True},
         },
