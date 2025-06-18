@@ -684,35 +684,53 @@ def update_model(
     remember_policy: str,
     replay_buffer_remember: ReplayBuffer,
     replay_buffer_forget: ReplayBuffer,
-    optimizer: torch.optim.Optimizer,
     device: str,
-    dqn: torch.nn.Module,
-    dqn_target: torch.nn.Module,
     ddqn: bool,
     gamma: float,
     use_gradient_clipping: bool = True,
     gradient_clip_value: float = 1.0,
+    separate_networks: bool = False,
+    # Shared network parameters
+    optimizer: torch.optim.Optimizer = None,
+    dqn: torch.nn.Module = None,
+    dqn_target: torch.nn.Module = None,
+    # Separate network parameters
+    optimizer_forget: torch.optim.Optimizer = None,
+    optimizer_remember: torch.optim.Optimizer = None,
+    dqn_forget: torch.nn.Module = None,
+    dqn_target_forget: torch.nn.Module = None,
+    dqn_remember: torch.nn.Module = None,
+    dqn_target_remember: torch.nn.Module = None,
 ) -> tuple[float, float, float]:
     r"""Update the model by gradient descent.
 
     Args:
-        forget_policy:
-        remember_policy:
+        forget_policy: Forget policy type
+        remember_policy: Remember policy type
         replay_buffer_remember: replay buffer for remember policy
         replay_buffer_forget: replay buffer for forget policy
-        optimizer: optimizer
         device: cpu or cuda
-        dqn: dqn model
-        dqn_target: dqn target model
         ddqn: whether to use double dqn or not
         gamma: discount factor
         use_gradient_clipping: Whether to use gradient clipping.
         gradient_clip_value: The maximum norm for gradient clipping.
+        separate_networks: Whether using separate networks for policies
+        optimizer: optimizer for shared network
+        dqn: shared dqn model
+        dqn_target: shared dqn target model
+        optimizer_forget: optimizer for forget network
+        optimizer_remember: optimizer for remember network
+        dqn_forget: forget dqn model
+        dqn_target_forget: forget dqn target model
+        dqn_remember: remember dqn model
+        dqn_target_remember: remember dqn target model
 
     Returns:
         loss_remember, loss_forget, loss_combined
-
     """
+    loss_remember = torch.tensor(0.0, device=device)
+    loss_forget = torch.tensor(0.0, device=device)
+
     if remember_policy == "rl":
         batch_remember = replay_buffer_remember.sample_batch()
         batch_remember = {
@@ -722,11 +740,21 @@ def update_model(
             "next_state": batch_remember["next_state"],
             "done": batch_remember["done"],
         }
-        loss_remember = compute_loss_remember(
-            batch_remember, device, dqn, dqn_target, ddqn, gamma
-        )
-    else:
-        loss_remember = torch.tensor(0.0, device=device)
+        
+        if separate_networks:
+            loss_remember = compute_loss_remember(
+                batch_remember, device, dqn_remember, dqn_target_remember, ddqn, gamma
+            )
+            if optimizer_remember is not None:
+                optimizer_remember.zero_grad()
+                loss_remember.backward()
+                if use_gradient_clipping:
+                    torch.nn.utils.clip_grad_norm_(dqn_remember.parameters(), gradient_clip_value)
+                optimizer_remember.step()
+        else:
+            loss_remember = compute_loss_remember(
+                batch_remember, device, dqn, dqn_target, ddqn, gamma
+            )
 
     if forget_policy == "rl":
         batch_forget = replay_buffer_forget.sample_batch()
@@ -738,23 +766,31 @@ def update_model(
             "done": batch_forget["done"],
         }
 
-        loss_forget = compute_loss_forget(
-            batch_forget, device, dqn, dqn_target, ddqn, gamma
-        )
-    else:
-        loss_forget = torch.tensor(0.0, device=device)
+        if separate_networks:
+            loss_forget = compute_loss_forget(
+                batch_forget, device, dqn_forget, dqn_target_forget, ddqn, gamma
+            )
+            if optimizer_forget is not None:
+                optimizer_forget.zero_grad()
+                loss_forget.backward()
+                if use_gradient_clipping:
+                    torch.nn.utils.clip_grad_norm_(dqn_forget.parameters(), gradient_clip_value)
+                optimizer_forget.step()
+        else:
+            loss_forget = compute_loss_forget(
+                batch_forget, device, dqn, dqn_target, ddqn, gamma
+            )
 
-    loss = loss_remember + loss_forget
-
-    if remember_policy == "rl" or forget_policy == "rl":
+    # For shared networks, update once with combined loss
+    if not separate_networks and (remember_policy == "rl" or forget_policy == "rl"):
+        loss = loss_remember + loss_forget
         optimizer.zero_grad()
         loss.backward()
-
-        # Add gradient clipping
         if use_gradient_clipping:
             torch.nn.utils.clip_grad_norm_(dqn.parameters(), gradient_clip_value)
-
         optimizer.step()
+    else:
+        loss = loss_remember + loss_forget
 
     loss_remember = loss_remember.detach().cpu().numpy().item()
     loss_forget = loss_forget.detach().cpu().numpy().item()
@@ -820,15 +856,24 @@ def save_validation(
         num_episodes: number of episodes run so far
         validation_interval: the interval to validate the model.
         val_file_names: a list of dirnames for the validation models.
-        dqn: the dqn model.
+        dqn: the dqn model to save (for shared networks only).
 
+    Note:
+        This function is primarily for shared networks. For separate networks,
+        use the _save_separate_networks_validation method in DQNAgent.
     """
     mean_score = round(np.mean(scores_temp).item())
 
     filename = os.path.join(
         default_root_dir, f"episode={num_episodes}_val-score={mean_score}.pt"
     )
-    torch.save(dqn.state_dict(), filename)
+    
+    # Save the network state dict
+    if dqn is not None:
+        torch.save(dqn.state_dict(), filename)
+    else:
+        # Handle case where no network is provided (shouldn't happen)
+        raise ValueError("No network provided for validation save")
 
     val_file_names.append(filename)
 

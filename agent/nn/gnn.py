@@ -56,6 +56,9 @@ class GNN(torch.nn.Module):
         mlp_params: dict = {"num_hidden_layers": 2, "dueling_dqn": True},
         rotational_for_relation: bool = True,
         device: str = "cpu",
+        forget_needs_rl: bool = True,
+        remember_needs_rl: bool = True,
+        separate_network_type: str = None,
     ) -> None:
         """Initialize the GNN model.
 
@@ -68,6 +71,9 @@ class GNN(torch.nn.Module):
             mlp_params: The parameters for the MLPs
             rotational_for_relation: Whether to use rotational embeddings for relations
             device: The device to use. Default is "cpu".
+            forget_needs_rl: Whether forget policy needs RL components
+            remember_needs_rl: Whether remember policy needs RL components
+            separate_network_type: Type of separate network ("forget", "remember", or None for shared)
 
         """
         super(GNN, self).__init__()
@@ -79,6 +85,9 @@ class GNN(torch.nn.Module):
         self.rotational_for_relation = rotational_for_relation
         self.device = device
         self.embedding_dim = gcn_layer_params["embedding_dim"]
+        self.forget_needs_rl = forget_needs_rl
+        self.remember_needs_rl = remember_needs_rl
+        self.separate_network_type = separate_network_type
 
         self.entity_to_idx = {entity: idx for idx, entity in enumerate(self.entities)}
         self.relation_to_idx = {
@@ -153,26 +162,52 @@ class GNN(torch.nn.Module):
         else:
             raise ValueError(f"{self.gcn_type} is not a valid GNN type.")
 
-        # Add attention aggregator for forget policy
-        self.attention_aggregator = AttentionAggregator(
-            embedding_dim=self.embedding_dim,
-            device=device,
-        )
-        self.mlp_forget = MLP(
-            n_actions=3,  # lru, lfu, fifo
-            input_size=self.embedding_dim,  # aggregated embedding
-            hidden_size=self.embedding_dim,
-            device=device,
-            **mlp_params,
-        )
+        # Conditionally create policy-specific components
+        if separate_network_type == "forget":
+            # Only create forget-related components
+            self.attention_aggregator_forget = AttentionAggregator(
+                embedding_dim=self.embedding_dim,
+                device=device,
+            )
+            self.mlp_forget = MLP(
+                n_actions=3,  # lru, lfu, fifo
+                input_size=self.embedding_dim,  # aggregated embedding
+                hidden_size=self.embedding_dim,
+                device=device,
+                **mlp_params,
+            )
+        elif separate_network_type == "remember":
+            # Only create remember-related components
+            self.mlp_remember = MLP(
+                n_actions=2,  # remember, forget
+                input_size=self.embedding_dim * 3,
+                hidden_size=self.embedding_dim,
+                device=device,
+                **mlp_params,
+            )
+        else:
+            # Shared network: conditionally create components based on needs
+            if forget_needs_rl:
+                self.attention_aggregator_forget = AttentionAggregator(
+                    embedding_dim=self.embedding_dim,
+                    device=device,
+                )
+                self.mlp_forget = MLP(
+                    n_actions=3,  # lru, lfu, fifo
+                    input_size=self.embedding_dim,  # aggregated embedding
+                    hidden_size=self.embedding_dim,
+                    device=device,
+                    **mlp_params,
+                )
 
-        self.mlp_remember = MLP(
-            n_actions=2,  # remember, forget
-            input_size=self.embedding_dim * 3,
-            hidden_size=self.embedding_dim,
-            device=device,
-            **mlp_params,
-        )
+            if remember_needs_rl:
+                self.mlp_remember = MLP(
+                    n_actions=2,  # remember, forget
+                    input_size=self.embedding_dim * 3,
+                    hidden_size=self.embedding_dim,
+                    device=device,
+                    **mlp_params,
+                )
 
         # Move the entire model to the specified device
         self.to(self.device)
@@ -366,6 +401,17 @@ class GNN(torch.nn.Module):
         Returns:
             Q-values for different policies:
         """
+        # Validate policy type based on network configuration
+        if self.separate_network_type == "forget" and policy_type != "forget":
+            raise ValueError(f"This network is configured for forget policy only, got {policy_type}")
+        if self.separate_network_type == "remember" and policy_type != "remember":
+            raise ValueError(f"This network is configured for remember policy only, got {policy_type}")
+        
+        if policy_type == "remember" and not hasattr(self, 'mlp_remember'):
+            raise ValueError("Remember policy components not available in this network")
+        if policy_type == "forget" and not hasattr(self, 'mlp_forget'):
+            raise ValueError("Forget policy components not available in this network")
+
         (
             entity_embeddings,
             relation_embeddings,
@@ -456,7 +502,7 @@ class GNN(torch.nn.Module):
                 start_idx += num_entities
 
             # Single batched attention aggregation
-            aggregated_embeddings = self.attention_aggregator(
+            aggregated_embeddings = self.attention_aggregator_forget(
                 padded_embeddings, attention_mask
             )  # (batch_size, embedding_dim)
 

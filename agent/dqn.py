@@ -11,10 +11,18 @@ from rdflib import XSD, Literal, URIRef
 
 from .long import LongTermAgent
 from .nn import GNN
-from .utils import (ReplayBuffer, plot_results, save_final_results,
-                    save_states_q_values_actions, save_validation,
-                    select_action, target_hard_update, update_epsilon,
-                    update_model, write_yaml)
+from .utils import (
+    ReplayBuffer,
+    plot_results,
+    save_final_results,
+    save_states_q_values_actions,
+    save_validation,
+    select_action,
+    target_hard_update,
+    update_epsilon,
+    update_model,
+    write_yaml,
+)
 
 
 class DQNAgent(LongTermAgent):
@@ -77,6 +85,7 @@ class DQNAgent(LongTermAgent):
         pretrain_semantic: str | bool = False,
         use_gradient_clipping: bool = True,
         gradient_clip_value: float = 1.0,
+        separate_networks: bool = False,
     ) -> None:
         r"""Initialize the DQNAgent.
         Args:
@@ -114,6 +123,8 @@ class DQNAgent(LongTermAgent):
                 False, "exclude_walls", "include_walls"
             use_gradient_clipping: Whether to use gradient clipping during training.
             gradient_clip_value: The maximum norm for gradient clipping.
+            separate_networks: Whether to use separate networks for remember and forget
+                policies.
 
         """
         env_config["seed"] = train_seed
@@ -181,13 +192,70 @@ class DQNAgent(LongTermAgent):
             ]
         )
 
-        self.dqn = GNN(**self.dqn_params)
-        self.dqn_target = GNN(**self.dqn_params)
-        self.dqn_target.load_state_dict(self.dqn.state_dict())
-        self.dqn_target.eval()
+        self.separate_networks = separate_networks
 
-        # optimizer
-        self.optimizer = optim.Adam(list(self.dqn.parameters()), lr=self.learning_rate)
+        # Determine which policies need RL
+        self.forget_needs_rl = forget_policy == "rl"
+        self.remember_needs_rl = remember_policy == "rl"
+
+        # Validate separate_networks usage
+        if self.separate_networks and not (self.forget_needs_rl and self.remember_needs_rl):
+            raise ValueError(
+                "separate_networks=True only makes sense when both forget_policy='rl' "
+                f"and remember_policy='rl'. Got forget_policy='{forget_policy}' and "
+                f"remember_policy='{remember_policy}'"
+            )
+
+        if self.separate_networks and (self.forget_needs_rl and self.remember_needs_rl):
+            # Create separate networks for forget and remember policies
+            self.dqn_forget = GNN(separate_network_type="forget", **self.dqn_params)
+            self.dqn_target_forget = GNN(
+                separate_network_type="forget", **self.dqn_params
+            )
+            self.dqn_target_forget.load_state_dict(self.dqn_forget.state_dict())
+            self.dqn_target_forget.eval()
+            self.optimizer_forget = optim.Adam(
+                list(self.dqn_forget.parameters()), lr=self.learning_rate
+            )
+
+            self.dqn_remember = GNN(
+                separate_network_type="remember", **self.dqn_params
+            )
+            self.dqn_target_remember = GNN(
+                separate_network_type="remember", **self.dqn_params
+            )
+            self.dqn_target_remember.load_state_dict(self.dqn_remember.state_dict())
+            self.dqn_target_remember.eval()
+            self.optimizer_remember = optim.Adam(
+                list(self.dqn_remember.parameters()), lr=self.learning_rate
+            )
+
+            # Set shared networks to None
+            self.dqn = None
+            self.dqn_target = None
+            self.optimizer = None
+        else:
+            # Use shared network (existing behavior)
+            self.dqn_params["forget_needs_rl"] = self.forget_needs_rl
+            self.dqn_params["remember_needs_rl"] = self.remember_needs_rl
+
+            self.dqn = GNN(**self.dqn_params)
+            self.dqn_target = GNN(**self.dqn_params)
+            self.dqn_target.load_state_dict(self.dqn.state_dict())
+            self.dqn_target.eval()
+
+            # optimizer
+            self.optimizer = optim.Adam(
+                list(self.dqn.parameters()), lr=self.learning_rate
+            )
+
+            # Set separate networks to None
+            self.dqn_forget = None
+            self.dqn_target_forget = None
+            self.optimizer_forget = None
+            self.dqn_remember = None
+            self.dqn_target_remember = None
+            self.optimizer_remember = None
 
         self.q_values = {
             "train": {"remember": [], "forget": []},
@@ -200,19 +268,61 @@ class DQNAgent(LongTermAgent):
 
     def _save_number_of_parameters(self) -> None:
         r"""Save the number of parameters in the model."""
-        dict_ = {
-            "total": sum(p.numel() for p in self.dqn.parameters()),
-            "gcn_layers": sum(p.numel() for p in self.dqn.gcn_layers.parameters()),
-            "entity_embeddings": self.dqn.entity_embeddings.numel(),
-            "relation_embeddings": self.dqn.relation_embeddings.numel(),
-        }
-        dict_["attention_aggregator"] = sum(
-            p.numel() for p in self.dqn.attention_aggregator.parameters()
-        )
-        dict_["mlp_remember"] = sum(
-            p.numel() for p in self.dqn.mlp_remember.parameters()
-        )
-        dict_["mlp_forget"] = sum(p.numel() for p in self.dqn.mlp_forget.parameters())
+        if self.separate_networks:
+            dict_ = {"total": 0}
+            
+            if self.dqn_forget is not None:
+                forget_params = {
+                    "total": sum(p.numel() for p in self.dqn_forget.parameters()),
+                    "gcn_layers": sum(p.numel() for p in self.dqn_forget.gcn_layers.parameters()),
+                    "entity_embeddings": self.dqn_forget.entity_embeddings.numel(),
+                    "relation_embeddings": self.dqn_forget.relation_embeddings.numel(),
+                }
+                if hasattr(self.dqn_forget, 'attention_aggregator_forget'):
+                    forget_params["attention_aggregator_forget"] = sum(
+                        p.numel() for p in self.dqn_forget.attention_aggregator_forget.parameters()
+                    )
+                if hasattr(self.dqn_forget, 'mlp_forget'):
+                    forget_params["mlp_forget"] = sum(
+                        p.numel() for p in self.dqn_forget.mlp_forget.parameters()
+                    )
+                
+                dict_["dqn_forget"] = forget_params
+                dict_["total"] += forget_params["total"]
+            
+            if self.dqn_remember is not None:
+                remember_params = {
+                    "total": sum(p.numel() for p in self.dqn_remember.parameters()),
+                    "gcn_layers": sum(p.numel() for p in self.dqn_remember.gcn_layers.parameters()),
+                    "entity_embeddings": self.dqn_remember.entity_embeddings.numel(),
+                    "relation_embeddings": self.dqn_remember.relation_embeddings.numel(),
+                }
+                if hasattr(self.dqn_remember, 'mlp_remember'):
+                    remember_params["mlp_remember"] = sum(
+                        p.numel() for p in self.dqn_remember.mlp_remember.parameters()
+                    )
+                
+                dict_["dqn_remember"] = remember_params
+                dict_["total"] += remember_params["total"]
+        else:
+            dict_ = {
+                "total": sum(p.numel() for p in self.dqn.parameters()),
+                "gcn_layers": sum(p.numel() for p in self.dqn.gcn_layers.parameters()),
+                "entity_embeddings": self.dqn.entity_embeddings.numel(),
+                "relation_embeddings": self.dqn.relation_embeddings.numel(),
+            }
+            if hasattr(self.dqn, "attention_aggregator_forget"):
+                dict_["attention_aggregator_forget"] = sum(
+                    p.numel() for p in self.dqn.attention_aggregator_forget.parameters()
+                )
+            if hasattr(self.dqn, "mlp_remember"):
+                dict_["mlp_remember"] = sum(
+                    p.numel() for p in self.dqn.mlp_remember.parameters()
+                )
+            if hasattr(self.dqn, "mlp_forget"):
+                dict_["mlp_forget"] = sum(
+                    p.numel() for p in self.dqn.mlp_forget.parameters()
+                )
         write_yaml(dict_, os.path.join(self.default_root_dir, "num_params.yaml"))
 
     def init_memory_systems(self) -> None:
@@ -306,10 +416,15 @@ class DQNAgent(LongTermAgent):
             q_remember = np.array([[np.nan] * len(self.remember2str)] * len(short_list))
 
         elif self.remember_policy == "rl":
+            if self.separate_networks:
+                dqn_to_use = self.dqn_remember
+            else:
+                dqn_to_use = self.dqn
+
             a_remember, q_remember = select_action(
                 state=memory_list,
                 greedy=greedy,
-                dqn=self.dqn,
+                dqn=dqn_to_use,
                 epsilon=self.epsilon,
                 policy_type="remember",
             )
@@ -354,10 +469,16 @@ class DQNAgent(LongTermAgent):
                 a_forget_str = "lfu"
             elif self.forget_policy == "rl":
                 memory_list = self.humemai.to_list()  # get updated memory list
+
+                if self.separate_networks:
+                    dqn_to_use = self.dqn_forget
+                else:
+                    dqn_to_use = self.dqn
+
                 a_forget, q_forget = select_action(
                     state=memory_list,
                     greedy=greedy,
-                    dqn=self.dqn,
+                    dqn=dqn_to_use,
                     epsilon=self.epsilon,
                     policy_type="forget",
                 )
@@ -469,7 +590,13 @@ class DQNAgent(LongTermAgent):
         self.training_loss = {"total": [], "remember": [], "forget": []}
         self.scores = {"train": [], "val": [], "test": None}
 
-        self.dqn.train()
+        if self.separate_networks:
+            if self.dqn_forget is not None:
+                self.dqn_forget.train()
+            if self.dqn_remember is not None:
+                self.dqn_remember.train()
+        else:
+            self.dqn.train()
 
         done = True
         score = 0
@@ -540,14 +667,29 @@ class DQNAgent(LongTermAgent):
                     remember_policy=self.remember_policy,
                     replay_buffer_remember=self.replay_buffer_remember,
                     replay_buffer_forget=self.replay_buffer_forget,
-                    optimizer=self.optimizer,
+                    optimizer=self.optimizer if not self.separate_networks else None,
+                    optimizer_forget=(
+                        self.optimizer_forget if self.separate_networks else None
+                    ),
+                    optimizer_remember=(
+                        self.optimizer_remember if self.separate_networks else None
+                    ),
                     device=self.device,
-                    dqn=self.dqn,
-                    dqn_target=self.dqn_target,
+                    dqn=self.dqn if not self.separate_networks else None,
+                    dqn_target=self.dqn_target if not self.separate_networks else None,
+                    dqn_forget=self.dqn_forget if self.separate_networks else None,
+                    dqn_target_forget=(
+                        self.dqn_target_forget if self.separate_networks else None
+                    ),
+                    dqn_remember=self.dqn_remember if self.separate_networks else None,
+                    dqn_target_remember=(
+                        self.dqn_target_remember if self.separate_networks else None
+                    ),
                     ddqn=self.ddqn,
                     gamma=self.gamma,
                     use_gradient_clipping=self.use_gradient_clipping,
                     gradient_clip_value=self.gradient_clip_value,
+                    separate_networks=self.separate_networks,
                 )
 
                 self.training_loss["total"].append(loss)
@@ -565,7 +707,18 @@ class DQNAgent(LongTermAgent):
 
                 # if hard update is needed
                 if self.iteration_idx % self.target_update_interval == 0:
-                    target_hard_update(dqn=self.dqn, dqn_target=self.dqn_target)
+                    if self.separate_networks:
+                        if self.dqn_forget is not None:
+                            target_hard_update(
+                                dqn=self.dqn_forget, dqn_target=self.dqn_target_forget
+                            )
+                        if self.dqn_remember is not None:
+                            target_hard_update(
+                                dqn=self.dqn_remember,
+                                dqn_target=self.dqn_target_remember,
+                            )
+                    else:
+                        target_hard_update(dqn=self.dqn, dqn_target=self.dqn_target)
 
                 # plotting & show training results
                 if (
@@ -642,25 +795,80 @@ class DQNAgent(LongTermAgent):
 
     def validate(self) -> None:
         r"""Validate the agent."""
-        self.dqn.eval()
+        if self.separate_networks:
+            if self.dqn_forget is not None:
+                self.dqn_forget.eval()
+            if self.dqn_remember is not None:
+                self.dqn_remember.eval()
+        else:
+            self.dqn.eval()
+            
         scores_temp, states, q_values, actions = self.validate_test_middle("val")
 
         num_episodes = self.iteration_idx // (self.env_config["terminates_at"] + 1) - 1
 
-        save_validation(
-            scores_temp=scores_temp,
-            scores=self.scores,
-            default_root_dir=self.default_root_dir,
-            num_episodes=num_episodes,
-            validation_interval=self.validation_interval,
-            val_file_names=self.val_file_names,
-            dqn=self.dqn,
-        )
+        # Save validation checkpoints based on network configuration
+        if self.separate_networks:
+            self._save_separate_networks_validation(scores_temp, num_episodes)
+        else:
+            save_validation(
+                scores_temp=scores_temp,
+                scores=self.scores,
+                default_root_dir=self.default_root_dir,
+                num_episodes=num_episodes,
+                validation_interval=self.validation_interval,
+                val_file_names=self.val_file_names,
+                dqn=self.dqn,
+            )
+
         save_states_q_values_actions(
             states, q_values, actions, self.default_root_dir, "val", num_episodes
         )
         self.env.close()
-        self.dqn.train()
+        
+        if self.separate_networks:
+            if self.dqn_forget is not None:
+                self.dqn_forget.train()
+            if self.dqn_remember is not None:
+                self.dqn_remember.train()
+        else:
+            self.dqn.train()
+
+    def _save_separate_networks_validation(self, scores_temp: list, num_episodes: int) -> None:
+        """Save validation checkpoints for separate networks."""
+        mean_score = round(np.mean(scores_temp).item())
+        
+        # Create checkpoint dictionary
+        checkpoint = {}
+        if self.dqn_forget is not None:
+            checkpoint['dqn_forget'] = self.dqn_forget.state_dict()
+        if self.dqn_remember is not None:
+            checkpoint['dqn_remember'] = self.dqn_remember.state_dict()
+        
+        filename = os.path.join(
+            self.default_root_dir, f"episode={num_episodes}_val-score={mean_score}.pt"
+        )
+        torch.save(checkpoint, filename)
+        self.val_file_names.append(filename)
+
+        # Update validation scores
+        for _ in range(self.validation_interval):
+            self.scores["val"].append(scores_temp)
+
+        # Keep only the best validation checkpoint
+        scores_to_compare = []
+        for fn in self.val_file_names:
+            score = int(fn.split("val-score=")[-1].split(".pt")[0])
+            scores_to_compare.append(score)
+
+        from .utils import list_duplicates_of
+        indexes = list_duplicates_of(scores_to_compare, max(scores_to_compare))
+        file_to_keep = self.val_file_names[indexes[-1]]
+
+        for fn in self.val_file_names:
+            if fn != file_to_keep:
+                os.remove(fn)
+                self.val_file_names.remove(fn)
 
     def test(self, checkpoint: str | None = None) -> None:
         r"""Test the agent.
@@ -669,17 +877,26 @@ class DQNAgent(LongTermAgent):
             checkpoint: The checkpoint to override.
 
         """
-        self.dqn.eval()
+        if self.separate_networks:
+            if self.dqn_forget is not None:
+                self.dqn_forget.eval()
+            if self.dqn_remember is not None:
+                self.dqn_remember.eval()
+        else:
+            self.dqn.eval()
 
         self.env_config["seed"] = self.test_seed
         self.env = gym.make(self.env_str, **self.env_config)
 
         assert len(self.val_file_names) == 1, f"{len(self.val_file_names)} should be 1"
 
-        self.dqn.load_state_dict(torch.load(self.val_file_names[0]))
-
-        if checkpoint is not None:
-            self.dqn.load_state_dict(torch.load(checkpoint))
+        # Load the best validation checkpoint
+        if self.separate_networks:
+            self._load_separate_networks_checkpoint(checkpoint)
+        else:
+            self.dqn.load_state_dict(torch.load(self.val_file_names[0]))
+            if checkpoint is not None:
+                self.dqn.load_state_dict(torch.load(checkpoint))
 
         scores, states, q_values, actions = self.validate_test_middle("test")
         self.scores["test"] = scores
@@ -697,7 +914,30 @@ class DQNAgent(LongTermAgent):
 
         self.plot_results("all", save_fig=True)
         self.env.close()
-        self.dqn.train()
+        
+        if self.separate_networks:
+            if self.dqn_forget is not None:
+                self.dqn_forget.train()
+            if self.dqn_remember is not None:
+                self.dqn_remember.train()
+        else:
+            self.dqn.train()
+
+    def _load_separate_networks_checkpoint(self, checkpoint: str | None = None) -> None:
+        """Load checkpoints for separate networks."""
+        if checkpoint is not None:
+            # Load custom checkpoint
+            checkpoint_dict = torch.load(checkpoint)
+        else:
+            # Load validation checkpoint
+            checkpoint_dict = torch.load(self.val_file_names[0])
+        
+        # Load state dicts for available networks
+        if self.dqn_forget is not None and 'dqn_forget' in checkpoint_dict:
+            self.dqn_forget.load_state_dict(checkpoint_dict['dqn_forget'])
+        
+        if self.dqn_remember is not None and 'dqn_remember' in checkpoint_dict:
+            self.dqn_remember.load_state_dict(checkpoint_dict['dqn_remember'])
 
     def plot_results(self, to_plot: str = "all", save_fig: bool = False) -> None:
         r"""Plot things for DQN training.

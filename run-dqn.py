@@ -14,13 +14,21 @@ from agent import DQNAgent
 
 
 def run_dqn_experiment(params):
-    test_seed, gcn_type, max_memory, forget_policy, remember_policy = params
+    (
+        test_seed,
+        gcn_type,
+        max_memory,
+        forget_policy,
+        remember_policy,
+        separate_networks,
+    ) = params
     train_seed = test_seed + 5
     num_iterations = 20000
 
     print(
         f"Test seed: {test_seed}, Train seed: {train_seed}, GCN: {gcn_type}, "
-        f"Max memory: {max_memory}, Forget: {forget_policy}, Remember: {remember_policy}"
+        f"Max memory: {max_memory}, Forget: {forget_policy}, Remember: {remember_policy}, "
+        f"Separate networks: {separate_networks}"
     )
 
     agent = DQNAgent(
@@ -75,6 +83,7 @@ def run_dqn_experiment(params):
         pretrain_semantic=False,
         use_gradient_clipping=False,
         gradient_clip_value=1.0,
+        separate_networks=separate_networks,
     )
     agent.train()
 
@@ -86,15 +95,47 @@ if __name__ == "__main__":
     policy_combinations = [("lru", "rl"), ("rl", "all"), ("rl", "rl")]
     # policy_combinations = [("rl", "all")]
 
-    all_combinations = list(
-        itertools.product(test_seeds, gcn_types, max_memories, policy_combinations)
-    )
+    all_combinations = []
 
-    # Flatten the policy combinations
-    all_combinations = [
-        (seed, gcn_type, memory, forget_policy, remember_policy)
-        for seed, gcn_type, memory, (forget_policy, remember_policy) in all_combinations
-    ]
+    for seed in test_seeds:
+        for gcn_type in gcn_types:
+            for memory in max_memories:
+                for forget_policy, remember_policy in policy_combinations:
+                    # Only test separate_networks=True when both policies are "rl"
+                    if forget_policy == "rl" and remember_policy == "rl":
+                        # Test both shared and separate networks
+                        all_combinations.append(
+                            (
+                                seed,
+                                gcn_type,
+                                memory,
+                                forget_policy,
+                                remember_policy,
+                                False,
+                            )
+                        )
+                        all_combinations.append(
+                            (
+                                seed,
+                                gcn_type,
+                                memory,
+                                forget_policy,
+                                remember_policy,
+                                True,
+                            )
+                        )
+                    else:
+                        # Only test shared networks (separate_networks=False)
+                        all_combinations.append(
+                            (
+                                seed,
+                                gcn_type,
+                                memory,
+                                forget_policy,
+                                remember_policy,
+                                False,
+                            )
+                        )
 
     random.shuffle(all_combinations)
 
