@@ -64,7 +64,7 @@ class DQNAgent(LongTermAgent):
                 "gcn_drop": 0.1,
                 "triple_qual_weight": 0.8,
             },
-            "silu_between_gcn_layers": True,
+            "relu_between_gcn_layers": True,
             "dropout_between_gcn_layers": True,
             "mlp_params": {"num_hidden_layers": 2, "dueling_dqn": True},
         },
@@ -75,6 +75,8 @@ class DQNAgent(LongTermAgent):
         device: str = "cpu",
         ddqn: bool = True,
         pretrain_semantic: str | bool = False,
+        use_gradient_clipping: bool = True,
+        gradient_clip_value: float = 1.0,
     ) -> None:
         r"""Initialize the DQNAgent.
         Args:
@@ -110,6 +112,8 @@ class DQNAgent(LongTermAgent):
             ddqn: Whether to use Double DQN.
             pretrain_semantic: Whether to pretrain the semantic memory.
                 False, "exclude_walls", "include_walls"
+            use_gradient_clipping: Whether to use gradient clipping during training.
+            gradient_clip_value: The maximum norm for gradient clipping.
 
         """
         env_config["seed"] = train_seed
@@ -138,6 +142,8 @@ class DQNAgent(LongTermAgent):
         self.device = device
         self.ddqn = ddqn
         self.pretrain_semantic = pretrain_semantic
+        self.use_gradient_clipping = use_gradient_clipping
+        self.gradient_clip_value = gradient_clip_value
         self.val_file_names = []
 
         assert self.batch_size <= self.warm_start <= self.replay_buffer_size
@@ -540,6 +546,8 @@ class DQNAgent(LongTermAgent):
                     dqn_target=self.dqn_target,
                     ddqn=self.ddqn,
                     gamma=self.gamma,
+                    use_gradient_clipping=self.use_gradient_clipping,
+                    gradient_clip_value=self.gradient_clip_value,
                 )
 
                 self.training_loss["total"].append(loss)

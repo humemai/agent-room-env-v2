@@ -47,14 +47,16 @@ def run_long_term_experiment(params):
 if __name__ == "__main__":
     seeds = [0, 1, 2, 3, 4]
     room_sizes = [
+        "s-different-prob",
+        "m-different-prob",
+        "l-different-prob",
         "xl-different-prob",
-        # "xxl-different-prob",
+        "xxl-different-prob",
     ]
     qa_policies = [
         "most_recently_added",
         "most_recently_used",
         "most_frequently_used",
-        "random",
     ]
     explore_policies = ["bfs", "dijkstra", "random"]
     mm_policies = ["lfu", "lru", "fifo", "random"]
@@ -66,6 +68,6 @@ if __name__ == "__main__":
         )
     )
 
-    num_processes = multiprocessing.cpu_count()  # or choose a fixed number
+    num_processes = multiprocessing.cpu_count()
     with multiprocessing.Pool(num_processes) as pool:
         pool.map(run_long_term_experiment, all_combinations)

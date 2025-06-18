@@ -684,12 +684,14 @@ def update_model(
     remember_policy: str,
     replay_buffer_remember: ReplayBuffer,
     replay_buffer_forget: ReplayBuffer,
-    optimizer: torch.optim.Adam,
+    optimizer: torch.optim.Optimizer,
     device: str,
     dqn: torch.nn.Module,
     dqn_target: torch.nn.Module,
     ddqn: bool,
-    gamma: dict[str, float],
+    gamma: float,
+    use_gradient_clipping: bool = True,
+    gradient_clip_value: float = 1.0,
 ) -> tuple[float, float, float]:
     r"""Update the model by gradient descent.
 
@@ -704,6 +706,8 @@ def update_model(
         dqn_target: dqn target model
         ddqn: whether to use double dqn or not
         gamma: discount factor
+        use_gradient_clipping: Whether to use gradient clipping.
+        gradient_clip_value: The maximum norm for gradient clipping.
 
     Returns:
         loss_remember, loss_forget, loss_combined
@@ -745,6 +749,11 @@ def update_model(
     if remember_policy == "rl" or forget_policy == "rl":
         optimizer.zero_grad()
         loss.backward()
+
+        # Add gradient clipping
+        if use_gradient_clipping:
+            torch.nn.utils.clip_grad_norm_(dqn.parameters(), gradient_clip_value)
+
         optimizer.step()
 
     loss_remember = loss_remember.detach().cpu().numpy().item()

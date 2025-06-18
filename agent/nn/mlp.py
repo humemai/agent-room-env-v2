@@ -5,7 +5,7 @@ from torch.nn.init import xavier_normal_
 
 
 class MLP(torch.nn.Module):
-    """Multi-layer perceptron with SiLU activation functions.
+    """Multi-layer perceptron with ReLU activation functions.
 
     Attributes:
         input_size: Input size of the linear layer.
@@ -50,12 +50,12 @@ class MLP(torch.nn.Module):
         advantage_layers.append(
             torch.nn.Linear(self.input_size, self.hidden_size, device=self.device)
         )
-        advantage_layers.append(torch.nn.SiLU())
+        advantage_layers.append(torch.nn.ReLU())
         for _ in range(self.num_hidden_layers - 1):
             advantage_layers.append(
                 torch.nn.Linear(self.hidden_size, self.hidden_size, device=self.device)
             )
-            advantage_layers.append(torch.nn.SiLU())
+            advantage_layers.append(torch.nn.ReLU())
         advantage_layers.append(
             torch.nn.Linear(self.hidden_size, self.n_actions, device=self.device)
         )
@@ -67,14 +67,14 @@ class MLP(torch.nn.Module):
             value_layers.append(
                 torch.nn.Linear(self.input_size, self.hidden_size, device=self.device)
             )
-            value_layers.append(torch.nn.SiLU())
+            value_layers.append(torch.nn.ReLU())
             for _ in range(self.num_hidden_layers - 1):
                 value_layers.append(
                     torch.nn.Linear(
                         self.hidden_size, self.hidden_size, device=self.device
                     )
                 )
-                value_layers.append(torch.nn.SiLU())
+                value_layers.append(torch.nn.ReLU())
             value_layers.append(
                 torch.nn.Linear(self.hidden_size, 1, device=self.device)
             )
