@@ -745,12 +745,11 @@ def update_model(
             loss_remember = compute_loss_remember(
                 batch_remember, device, dqn_remember, dqn_target_remember, ddqn, gamma
             )
-            if optimizer_remember is not None:
-                optimizer_remember.zero_grad()
-                loss_remember.backward()
-                if use_gradient_clipping:
-                    torch.nn.utils.clip_grad_norm_(dqn_remember.parameters(), gradient_clip_value)
-                optimizer_remember.step()
+            optimizer_remember.zero_grad()
+            loss_remember.backward()
+            if use_gradient_clipping:
+                torch.nn.utils.clip_grad_norm_(dqn_remember.parameters(), gradient_clip_value)
+            optimizer_remember.step()
         else:
             loss_remember = compute_loss_remember(
                 batch_remember, device, dqn, dqn_target, ddqn, gamma
@@ -770,12 +769,11 @@ def update_model(
             loss_forget = compute_loss_forget(
                 batch_forget, device, dqn_forget, dqn_target_forget, ddqn, gamma
             )
-            if optimizer_forget is not None:
-                optimizer_forget.zero_grad()
-                loss_forget.backward()
-                if use_gradient_clipping:
-                    torch.nn.utils.clip_grad_norm_(dqn_forget.parameters(), gradient_clip_value)
-                optimizer_forget.step()
+            optimizer_forget.zero_grad()
+            loss_forget.backward()
+            if use_gradient_clipping:
+                torch.nn.utils.clip_grad_norm_(dqn_forget.parameters(), gradient_clip_value)
+            optimizer_forget.step()
         else:
             loss_forget = compute_loss_forget(
                 batch_forget, device, dqn, dqn_target, ddqn, gamma

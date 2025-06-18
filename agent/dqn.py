@@ -11,24 +11,18 @@ from rdflib import XSD, Literal, URIRef
 
 from .long import LongTermAgent
 from .nn import GNN
-from .utils import (
-    ReplayBuffer,
-    plot_results,
-    save_final_results,
-    save_states_q_values_actions,
-    save_validation,
-    select_action,
-    target_hard_update,
-    update_epsilon,
-    update_model,
-    write_yaml,
-)
+from .utils import (ReplayBuffer, plot_results, save_final_results,
+                    save_states_q_values_actions, save_validation,
+                    select_action, target_hard_update, update_epsilon,
+                    update_model, write_yaml)
 
 
 class DQNAgent(LongTermAgent):
     """
     DQNAgent is a specialized LongTermAgent that uses Deep Q-Learning for decision
     making. It inherits from LongTermAgent and implements the DQN algorithm.
+    
+    Now supports both GNN and Transformer-based function approximators.
     """
 
     def __init__(
@@ -75,6 +69,12 @@ class DQNAgent(LongTermAgent):
             "relu_between_gcn_layers": True,
             "dropout_between_gcn_layers": True,
             "mlp_params": {"num_hidden_layers": 2, "dueling_dqn": True},
+            "architecture_type": "gnn",  # "gnn" or "transformer"
+            "transformer_params": {
+                "num_layers": 2,
+                "num_heads": 8,
+                "dropout": 0.1,
+            },
         },
         validation_interval: int = 5,
         plotting_interval: int = 20,
@@ -272,58 +272,72 @@ class DQNAgent(LongTermAgent):
             dict_ = {"total": 0}
             
             if self.dqn_forget is not None:
-                forget_params = {
-                    "total": sum(p.numel() for p in self.dqn_forget.parameters()),
-                    "gcn_layers": sum(p.numel() for p in self.dqn_forget.gcn_layers.parameters()),
-                    "entity_embeddings": self.dqn_forget.entity_embeddings.numel(),
-                    "relation_embeddings": self.dqn_forget.relation_embeddings.numel(),
-                }
-                if hasattr(self.dqn_forget, 'attention_aggregator_forget'):
-                    forget_params["attention_aggregator_forget"] = sum(
-                        p.numel() for p in self.dqn_forget.attention_aggregator_forget.parameters()
-                    )
-                if hasattr(self.dqn_forget, 'mlp_forget'):
-                    forget_params["mlp_forget"] = sum(
-                        p.numel() for p in self.dqn_forget.mlp_forget.parameters()
-                    )
-                
+                forget_params = self._count_network_parameters(self.dqn_forget)
                 dict_["dqn_forget"] = forget_params
                 dict_["total"] += forget_params["total"]
             
             if self.dqn_remember is not None:
-                remember_params = {
-                    "total": sum(p.numel() for p in self.dqn_remember.parameters()),
-                    "gcn_layers": sum(p.numel() for p in self.dqn_remember.gcn_layers.parameters()),
-                    "entity_embeddings": self.dqn_remember.entity_embeddings.numel(),
-                    "relation_embeddings": self.dqn_remember.relation_embeddings.numel(),
-                }
-                if hasattr(self.dqn_remember, 'mlp_remember'):
-                    remember_params["mlp_remember"] = sum(
-                        p.numel() for p in self.dqn_remember.mlp_remember.parameters()
-                    )
-                
+                remember_params = self._count_network_parameters(self.dqn_remember)
                 dict_["dqn_remember"] = remember_params
                 dict_["total"] += remember_params["total"]
         else:
-            dict_ = {
-                "total": sum(p.numel() for p in self.dqn.parameters()),
-                "gcn_layers": sum(p.numel() for p in self.dqn.gcn_layers.parameters()),
-                "entity_embeddings": self.dqn.entity_embeddings.numel(),
-                "relation_embeddings": self.dqn.relation_embeddings.numel(),
-            }
-            if hasattr(self.dqn, "attention_aggregator_forget"):
-                dict_["attention_aggregator_forget"] = sum(
-                    p.numel() for p in self.dqn.attention_aggregator_forget.parameters()
-                )
-            if hasattr(self.dqn, "mlp_remember"):
-                dict_["mlp_remember"] = sum(
-                    p.numel() for p in self.dqn.mlp_remember.parameters()
-                )
-            if hasattr(self.dqn, "mlp_forget"):
-                dict_["mlp_forget"] = sum(
-                    p.numel() for p in self.dqn.mlp_forget.parameters()
-                )
+            dict_ = self._count_network_parameters(self.dqn)
+        
         write_yaml(dict_, os.path.join(self.default_root_dir, "num_params.yaml"))
+
+    def _count_network_parameters(self, network):
+        """Count parameters for a network, handling both GNN and Transformer architectures."""
+        if network.architecture_type == "transformer":
+            total_params = sum(p.numel() for p in network.parameters())
+            
+            params_dict = {
+                "total": total_params,
+                "architecture": "transformer",
+            }
+            
+            transformer_model = network.transformer_model
+            params_dict.update({
+                "tokenizer": sum(p.numel() for p in transformer_model.tokenizer.parameters()),
+                "transformer_encoder": sum(p.numel() for p in transformer_model.transformer.parameters()),
+            })
+            
+            if hasattr(transformer_model, 'attention_aggregator_forget'):
+                params_dict["attention_aggregator_forget"] = sum(
+                    p.numel() for p in transformer_model.attention_aggregator_forget.parameters()
+                )
+            if hasattr(transformer_model, 'mlp_forget'):
+                params_dict["mlp_forget"] = sum(
+                    p.numel() for p in transformer_model.mlp_forget.parameters()
+                )
+            if hasattr(transformer_model, 'mlp_remember'):
+                params_dict["mlp_remember"] = sum(
+                    p.numel() for p in transformer_model.mlp_remember.parameters()
+                )
+            
+            return params_dict
+        else:
+            params_dict = {
+                "total": sum(p.numel() for p in network.parameters()),
+                "architecture": "gnn",
+                "gcn_layers": sum(p.numel() for p in network.gcn_layers.parameters()),
+                "entity_embeddings": network.entity_embeddings.numel(),
+                "relation_embeddings": network.relation_embeddings.numel(),
+            }
+            
+            if hasattr(network, "attention_aggregator_forget"):
+                params_dict["attention_aggregator_forget"] = sum(
+                    p.numel() for p in network.attention_aggregator_forget.parameters()
+                )
+            if hasattr(network, "mlp_remember"):
+                params_dict["mlp_remember"] = sum(
+                    p.numel() for p in network.mlp_remember.parameters()
+                )
+            if hasattr(network, "mlp_forget"):
+                params_dict["mlp_forget"] = sum(
+                    p.numel() for p in network.mlp_forget.parameters()
+                )
+            
+            return params_dict
 
     def init_memory_systems(self) -> None:
         r"""Initialize the agent's memory systems. This has nothing to do with the

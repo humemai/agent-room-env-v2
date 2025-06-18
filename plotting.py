@@ -1,14 +1,15 @@
-import sys
+import json
 import os
-import yaml
-from glob import glob
-from tqdm.auto import tqdm
+import sys
 from collections import defaultdict
-import numpy as np
-import pandas as pd
+from glob import glob
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-import json
+import numpy as np
+import pandas as pd
+import yaml
+from tqdm.auto import tqdm
 
 # Create directories if they don't exist
 os.makedirs("./data", exist_ok=True)

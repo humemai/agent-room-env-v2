@@ -8,6 +8,7 @@ from torch_geometric.nn import GCNConv
 from .attention import AttentionAggregator
 from .mlp import MLP
 from .stare_conv import StarEConvLayer
+from .transformer import TransformerMemoryNet
 from .utils import process_graph
 
 
@@ -17,27 +18,7 @@ class GNN(torch.nn.Module):
     or StarEConv layers and two MLPs for the two memory management polices,
     respectively.
 
-    Attributes:
-        entities: List of entities
-        relations: List of relations
-        gcn_layer_params: The parameters for the GCN layers
-        gcn_type: The type of GCN layer
-        mlp_params: The parameters for the MLPs
-        rotational_for_relation: Whether to use rotational embeddings for relations
-        device: The device to use
-        embedding_dim: The dimension of the embeddings
-        entity_to_idx: The mapping from entities to indices
-        relation_to_idx: The mapping from relations to indices
-        entity_embeddings: The entity embeddings
-        relation_embeddings: The relation embeddings
-        relu_between_gcn_layers: Whether to apply ReLU activation between GCN layers
-        dropout_between_gcn_layers: Whether to apply dropout between GCN layers
-        relu: The ReLU activation function
-        drop: The dropout layer
-        gcn_layers: The GCN layers
-        mlp_forget: The MLP for forget
-        mlp_remember: The MLP for remember
-
+    Now supports both GNN-based and Transformer-based architectures.
     """
 
     def __init__(
@@ -59,8 +40,14 @@ class GNN(torch.nn.Module):
         forget_needs_rl: bool = True,
         remember_needs_rl: bool = True,
         separate_network_type: str = None,
+        architecture_type: str = "gnn",  # New parameter: "gnn" or "transformer"
+        transformer_params: dict = {  # New parameter for transformer config
+            "num_layers": 2,
+            "num_heads": 8,
+            "dropout": 0.1,
+        },
     ) -> None:
-        """Initialize the GNN model.
+        """Initialize the GNN/Transformer model.
 
         Args:
             entities: List of entities
@@ -74,6 +61,8 @@ class GNN(torch.nn.Module):
             forget_needs_rl: Whether forget policy needs RL components
             remember_needs_rl: Whether remember policy needs RL components
             separate_network_type: Type of separate network ("forget", "remember", or None for shared)
+            architecture_type: Type of architecture to use ("gnn" or "transformer")
+            transformer_params: Parameters for transformer architecture
 
         """
         super(GNN, self).__init__()
@@ -88,7 +77,29 @@ class GNN(torch.nn.Module):
         self.forget_needs_rl = forget_needs_rl
         self.remember_needs_rl = remember_needs_rl
         self.separate_network_type = separate_network_type
+        self.architecture_type = architecture_type.lower()
+        self.transformer_params = transformer_params
 
+        # If using transformer architecture, create transformer model and return
+        if self.architecture_type == "transformer":
+            self.transformer_model = TransformerMemoryNet(
+                entities=entities,
+                relations=relations,
+                embedding_dim=self.embedding_dim,
+                num_transformer_layers=transformer_params["num_layers"],
+                num_heads=transformer_params["num_heads"],
+                dropout=transformer_params["dropout"],
+                mlp_params=mlp_params,
+                device=device,
+                forget_needs_rl=forget_needs_rl,
+                remember_needs_rl=remember_needs_rl,
+                separate_network_type=separate_network_type,
+            )
+            # Move to device
+            self.to(self.device)
+            return
+
+        # Continue with GNN initialization for non-transformer architectures
         self.entity_to_idx = {entity: idx for idx, entity in enumerate(self.entities)}
         self.relation_to_idx = {
             relation: idx for idx, relation in enumerate(self.relations)
@@ -388,7 +399,7 @@ class GNN(torch.nn.Module):
         )
 
     def forward(self, data: np.ndarray, policy_type: str) -> list[torch.Tensor]:
-        """Forward pass of the GNN model.
+        """Forward pass of the GNN/Transformer model.
 
         Args:
             data: The input data as a batch. Because of how it's processed, the data
@@ -401,6 +412,11 @@ class GNN(torch.nn.Module):
         Returns:
             Q-values for different policies:
         """
+        # If using transformer, delegate to transformer model
+        if self.architecture_type == "transformer":
+            return self.transformer_model(data, policy_type)
+        
+        # Continue with existing GNN forward pass
         # Validate policy type based on network configuration
         if self.separate_network_type == "forget" and policy_type != "forget":
             raise ValueError(f"This network is configured for forget policy only, got {policy_type}")
