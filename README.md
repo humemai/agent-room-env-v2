@@ -122,12 +122,14 @@ long-term memory management (remember) and "Dijkstra" search for maze exploratio
 The DQN agents support two different function approximator architectures:
 
 ### GNN-based Architecture
+
 - Uses StarE (Star Graph Neural Network) convolution layers
 - Processes memory as a knowledge graph with entities, relations, and qualifiers
 - Attention-based aggregation for forget policy decisions
 - Per-memory Q-value computation for remember policy decisions
 
 ### Transformer-based Architecture
+
 - Tokenizes memory quadruples into vector representations
 - Uses multi-layer transformer encoder to process memory sequences
 - Supports the same policy structures as GNN architecture
@@ -138,14 +140,41 @@ Both architectures can be configured with either shared networks (one network ha
 ## Implementation Approach
 
 ### Symbolic Agents
+
 All policies in the symbolic agents (question answering, exploration, and memory management)
 are implemented as discrete algorithms without any learning components. This
 provides a transparent baseline for comparison.
 
 ### Neural Agents
+
 The DQN agents use reinforcement learning to optimize memory management policies while
 keeping question answering and exploration fixed to the best-performing symbolic policies.
 This allows for direct comparison of learned vs. hand-crafted memory management strategies.
 
 The neural agents support flexible combinations of learned and symbolic policies, enabling
 systematic evaluation of which components benefit most from learning.
+
+### Number of parameters by architecture type
+
+The following tables show the number of parameters for different DQN agent configurations:
+
+**Vanilla GCN based**
+
+| Forget Policy | Remember Policy | Separate Networks | Embedding Dim | Num Layers | MLP Hidden Layers | Total Params |
+| ------------- | --------------- | ----------------- | ------------- | ---------- | ----------------- | ------------ |
+| RL            | RL              | True              | 32            | 2          | 1                 | 22471        |
+| RL            | RL              | True              | 64            | 4          | 1                 | 90247        |
+
+**StarE GCN based**
+
+| Forget Policy | Remember Policy | Separate Networks | Embedding Dim | Num Layers | MLP Hidden Layers | Total Params |
+| ------------- | --------------- | ----------------- | ------------- | ---------- | ----------------- | ------------ |
+| RL            | RL              | True              | 32            | 2          | 1                 | 39239        |
+| RL            | RL              | True              | 64            | 2          | 1                 | 139911       |
+
+**Transformer-based**
+
+| Forget Policy | Remember Policy | Separate Networks | Embedding Dim | Num Layers | Num Heads | MLP Hidden Layers | Total Params |
+| ------------- | --------------- | ----------------- | ------------- | ---------- | --------- | ----------------- | ------------ |
+| RL            | RL              | True              | 16            | 2          | 2         | 1                 | 22983        |
+| RL            | RL              | True              | 32            | 4          | 4         | 1                 | 133639       |

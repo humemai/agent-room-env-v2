@@ -90,7 +90,7 @@ class MemoryTokenizer(nn.Module):
         for sample in memory_batch:
             for quadruple in sample:
                 head, relation, tail, qualifiers = quadruple
-                
+
                 # Validate entities and relations exist
                 if head not in self.entity_to_idx:
                     raise ValueError(f"Unknown entity '{head}' in entities")
@@ -98,15 +98,17 @@ class MemoryTokenizer(nn.Module):
                     raise ValueError(f"Unknown relation '{relation}' in relations")
                 if tail not in self.entity_to_idx:
                     raise ValueError(f"Unknown entity '{tail}' in entities")
-                
+
                 # Validate that at least one valid qualifier exists (excluding memory_id)
-                valid_qualifiers = {k: v for k, v in qualifiers.items() if k != "memory_id"}
+                valid_qualifiers = {
+                    k: v for k, v in qualifiers.items() if k != "memory_id"
+                }
                 if not valid_qualifiers:
                     raise ValueError(
                         f"Quadruple ({head}, {relation}, {tail}) has no valid qualifiers. "
                         "Every memory must have at least one qualifier (excluding memory_id)."
                     )
-                
+
                 all_quadruples.append((head, relation, tail, qualifiers))
 
         if not all_quadruples:
@@ -117,24 +119,38 @@ class MemoryTokenizer(nn.Module):
 
         # Batch process all qualifiers and get embeddings
         qualifier_embeddings = self._batch_process_qualifiers(all_quadruples)
-        
+
         # Batch process head, relation, tail embeddings
         heads, relations, tails = zip(*[(q[0], q[1], q[2]) for q in all_quadruples])
-        
-        head_indices = torch.tensor([self.entity_to_idx[h] for h in heads], device=self.device)
-        rel_indices = torch.tensor([self.relation_to_idx[r] for r in relations], device=self.device)
-        tail_indices = torch.tensor([self.entity_to_idx[t] for t in tails], device=self.device)
-        
-        head_embs = self.entity_embeddings[head_indices]  # (n_quadruples, embedding_dim)
-        rel_embs = self.relation_embeddings[rel_indices]   # (n_quadruples, embedding_dim)
-        tail_embs = self.entity_embeddings[tail_indices]   # (n_quadruples, embedding_dim)
-        
+
+        head_indices = torch.tensor(
+            [self.entity_to_idx[h] for h in heads], device=self.device
+        )
+        rel_indices = torch.tensor(
+            [self.relation_to_idx[r] for r in relations], device=self.device
+        )
+        tail_indices = torch.tensor(
+            [self.entity_to_idx[t] for t in tails], device=self.device
+        )
+
+        head_embs = self.entity_embeddings[
+            head_indices
+        ]  # (n_quadruples, embedding_dim)
+        rel_embs = self.relation_embeddings[
+            rel_indices
+        ]  # (n_quadruples, embedding_dim)
+        tail_embs = self.entity_embeddings[
+            tail_indices
+        ]  # (n_quadruples, embedding_dim)
+
         # Concatenate all embeddings
-        token_inputs = torch.cat([head_embs, rel_embs, tail_embs, qualifier_embeddings], dim=1)
-        
+        token_inputs = torch.cat(
+            [head_embs, rel_embs, tail_embs, qualifier_embeddings], dim=1
+        )
+
         # Project to final tokens
         tokens = self.token_projection(token_inputs)
-        
+
         return tokens
 
     def _batch_process_qualifiers(self, all_quadruples: list) -> torch.Tensor:
@@ -144,63 +160,79 @@ class MemoryTokenizer(nn.Module):
         all_value_indices = []
         qualifier_to_quad_map = []  # Maps each qualifier to its quadruple index
         quad_qualifier_counts = []  # Number of qualifiers per quadruple
-        
+
         for quad_idx, (_, _, _, qualifiers) in enumerate(all_quadruples):
             valid_quals = 0
             for qual_key, qual_value in qualifiers.items():
                 if qual_key == "memory_id":
                     continue
-                
+
                 # Validate qualifier key and value
                 if qual_key not in self.relation_to_idx:
-                    raise ValueError(f"Unknown qualifier type '{qual_key}' in relations")
-                
+                    raise ValueError(
+                        f"Unknown qualifier type '{qual_key}' in relations"
+                    )
+
                 qual_value_str = str(qual_value)
                 if qual_value_str not in self.entity_to_idx:
-                    raise ValueError(f"Unknown qualifier value '{qual_value_str}' in entities")
-                
+                    raise ValueError(
+                        f"Unknown qualifier value '{qual_value_str}' in entities"
+                    )
+
                 all_type_indices.append(self.relation_to_idx[qual_key])
                 all_value_indices.append(self.entity_to_idx[qual_value_str])
                 qualifier_to_quad_map.append(quad_idx)
                 valid_quals += 1
-            
+
             if valid_quals == 0:
                 raise ValueError(
                     f"Quadruple {quad_idx} has no valid qualifiers (excluding memory_id). "
                     "Every memory must have at least one qualifier."
                 )
             quad_qualifier_counts.append(valid_quals)
-        
+
         if not all_type_indices:
             raise ValueError("No valid qualifiers found across all quadruples")
-        
+
         # Batch process all qualifiers through MLP
         type_indices = torch.tensor(all_type_indices, device=self.device)
         value_indices = torch.tensor(all_value_indices, device=self.device)
-        
-        type_embs = self.relation_embeddings[type_indices]  # (total_quals, embedding_dim)
-        value_embs = self.entity_embeddings[value_indices]  # (total_quals, embedding_dim)
-        
-        combined_inputs = torch.cat([type_embs, value_embs], dim=1)  # (total_quals, embedding_dim * 2)
-        processed_qualifiers = self.qualifier_mlp(combined_inputs)   # (total_quals, embedding_dim)
-        
+
+        type_embs = self.relation_embeddings[
+            type_indices
+        ]  # (total_quals, embedding_dim)
+        value_embs = self.entity_embeddings[
+            value_indices
+        ]  # (total_quals, embedding_dim)
+
+        combined_inputs = torch.cat(
+            [type_embs, value_embs], dim=1
+        )  # (total_quals, embedding_dim * 2)
+        processed_qualifiers = self.qualifier_mlp(
+            combined_inputs
+        )  # (total_quals, embedding_dim)
+
         # Group qualifiers by quadruple and apply attention
         aggregated_qualifiers = []
         qual_start_idx = 0
-        
+
         for num_quals in quad_qualifier_counts:
             # Get qualifiers for this quadruple
-            quad_quals = processed_qualifiers[qual_start_idx:qual_start_idx + num_quals]
+            quad_quals = processed_qualifiers[
+                qual_start_idx : qual_start_idx + num_quals
+            ]
             qual_start_idx += num_quals
-            
+
             # Apply attention aggregation with proper masking
             quad_quals_batch = quad_quals.unsqueeze(0)  # (1, num_quals, embedding_dim)
             # Attention mask: True for valid positions (our convention)
-            attention_mask = torch.ones(1, num_quals, dtype=torch.bool, device=self.device)
-            
+            attention_mask = torch.ones(
+                1, num_quals, dtype=torch.bool, device=self.device
+            )
+
             aggregated = self.qualifier_attention(quad_quals_batch, attention_mask)
             aggregated_qualifiers.append(aggregated.squeeze(0))  # (embedding_dim,)
-        
+
         return torch.stack(aggregated_qualifiers)  # (n_quadruples, embedding_dim)
 
     def _process_qualifiers(self, qualifiers: dict[str, Any]) -> torch.Tensor:
@@ -224,12 +256,18 @@ class MemoryTokenizer(nn.Module):
             # Get value embedding (convert value to string and look up in entities)
             qual_value_str = str(qual_value)
             if qual_value_str not in self.entity_to_idx:
-                raise ValueError(f"Unknown qualifier value '{qual_value_str}' in entities")
+                raise ValueError(
+                    f"Unknown qualifier value '{qual_value_str}' in entities"
+                )
             value_emb = self.entity_embeddings[self.entity_to_idx[qual_value_str]]
 
             # Combine type and value embeddings through MLP
-            combined_input = torch.cat([type_emb, value_emb], dim=0)  # (embedding_dim * 2,)
-            processed_qualifier = self.qualifier_mlp(combined_input.unsqueeze(0))  # (1, embedding_dim)
+            combined_input = torch.cat(
+                [type_emb, value_emb], dim=0
+            )  # (embedding_dim * 2,)
+            processed_qualifier = self.qualifier_mlp(
+                combined_input.unsqueeze(0)
+            )  # (1, embedding_dim)
             qualifier_embeddings.append(processed_qualifier.squeeze(0))
 
         if not qualifier_embeddings:
@@ -240,13 +278,19 @@ class MemoryTokenizer(nn.Module):
 
         # Always use attention aggregation, even for single qualifier
         # Stack qualifiers and add dummy batch dimension
-        stacked_qualifiers = torch.stack(qualifier_embeddings).unsqueeze(0)  # (1, num_quals, embedding_dim)
+        stacked_qualifiers = torch.stack(qualifier_embeddings).unsqueeze(
+            0
+        )  # (1, num_quals, embedding_dim)
 
         # Create mask (True for valid positions - our convention)
-        mask = torch.ones(1, len(qualifier_embeddings), dtype=torch.bool, device=self.device)
+        mask = torch.ones(
+            1, len(qualifier_embeddings), dtype=torch.bool, device=self.device
+        )
 
         # Apply attention aggregation
-        aggregated = self.qualifier_attention(stacked_qualifiers, mask)  # (1, embedding_dim)
+        aggregated = self.qualifier_attention(
+            stacked_qualifiers, mask
+        )  # (1, embedding_dim)
 
         return aggregated.squeeze(0)  # (embedding_dim,)
 
@@ -257,6 +301,7 @@ class TransformerMemoryEncoder(nn.Module):
     def __init__(
         self,
         embedding_dim: int,
+        dim_feedforward: int,  # Typically 4x embedding_dim
         num_layers: int = 2,
         num_heads: int = 8,
         dropout: float = 0.1,
@@ -271,7 +316,7 @@ class TransformerMemoryEncoder(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embedding_dim,
             nhead=num_heads,
-            dim_feedforward=embedding_dim * 4,  # Typically 4x embedding_dim
+            dim_feedforward=dim_feedforward,  # Typically 4x embedding_dim
             dropout=dropout,
             batch_first=True,
             device=device,
@@ -306,6 +351,7 @@ class TransformerMemoryNet(nn.Module):
         entities: list[str],
         relations: list[str],
         embedding_dim: int = 64,
+        dim_feedforward: int = 256,  # Typically 4x embedding_dim
         num_transformer_layers: int = 2,
         num_heads: int = 8,
         dropout: float = 0.1,
@@ -318,6 +364,7 @@ class TransformerMemoryNet(nn.Module):
         super().__init__()
         self.device = device
         self.embedding_dim = embedding_dim
+        self.dim_feedforward = dim_feedforward
         self.forget_needs_rl = forget_needs_rl
         self.remember_needs_rl = remember_needs_rl
         self.separate_network_type = separate_network_type
@@ -333,6 +380,7 @@ class TransformerMemoryNet(nn.Module):
         # Transformer encoder
         self.transformer = TransformerMemoryEncoder(
             embedding_dim=embedding_dim,
+            dim_feedforward=dim_feedforward,
             num_layers=num_transformer_layers,
             num_heads=num_heads,
             dropout=dropout,
@@ -490,9 +538,11 @@ class TransformerMemoryNet(nn.Module):
 
         for i, info in enumerate(batch_info):
             short_term_indices = info["short_term_indices"]
-            
+
             if not short_term_indices:
-                raise ValueError(f"Sample {i} has no short-term memories for remember policy")
+                raise ValueError(
+                    f"Sample {i} has no short-term memories for remember policy"
+                )
 
             # Extract short-term memory tokens
             short_term_tokens = encoded_tokens[
@@ -510,7 +560,7 @@ class TransformerMemoryNet(nn.Module):
         # Use attention aggregator to get single representation per sample
         # Convert padding mask to attention mask (invert for our attention convention)
         attention_mask = ~padding_mask  # True for valid positions, False for padded
-        
+
         aggregated_embeddings = self.attention_aggregator_forget(
             encoded_tokens, attention_mask
         )  # (batch_size, embedding_dim)

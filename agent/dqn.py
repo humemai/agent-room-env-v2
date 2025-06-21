@@ -11,17 +11,25 @@ from rdflib import XSD, Literal, URIRef
 
 from .long import LongTermAgent
 from .nn import GNN
-from .utils import (ReplayBuffer, plot_results, save_final_results,
-                    save_states_q_values_actions, save_validation,
-                    select_action, target_hard_update, update_epsilon,
-                    update_model, write_yaml)
+from .utils import (
+    ReplayBuffer,
+    plot_results,
+    save_final_results,
+    save_states_q_values_actions,
+    save_validation,
+    select_action,
+    target_hard_update,
+    update_epsilon,
+    update_model,
+    write_yaml,
+)
 
 
 class DQNAgent(LongTermAgent):
     """
     DQNAgent is a specialized LongTermAgent that uses Deep Q-Learning for decision
     making. It inherits from LongTermAgent and implements the DQN algorithm.
-    
+
     Now supports both GNN and Transformer-based function approximators.
     """
 
@@ -58,24 +66,30 @@ class DQNAgent(LongTermAgent):
         min_epsilon: float = 0.01,
         gamma: dict = 0.99,
         learning_rate: int = 0.001,
-        dqn_params: dict = {
-            "gcn_layer_params": {
-                "type": "stare",
-                "embedding_dim": 64,
-                "num_layers": 2,
-                "gcn_drop": 0.1,
-                "triple_qual_weight": 0.8,
-            },
-            "relu_between_gcn_layers": True,
-            "dropout_between_gcn_layers": True,
-            "mlp_params": {"num_hidden_layers": 2, "dueling_dqn": True},
-            "architecture_type": "gnn",  # "gnn" or "transformer"
-            "transformer_params": {
-                "num_layers": 2,
-                "num_heads": 8,
-                "dropout": 0.1,
-            },
+        architecture_type: str = "stare",  # "stare", "gcn", or "transformer"
+        stare_params: dict = {
+            "embedding_dim": 64,
+            "num_layers": 2,
+            "gcn_drop": 0.1,
+            "triple_qual_weight": 0.8,
+            "relu_between_layers": True,
+            "dropout_between_layers": True,
         },
+        gcn_params: dict = {
+            "embedding_dim": 64,
+            "num_layers": 2,
+            "gcn_drop": 0.1,
+            "relu_between_layers": True,
+            "dropout_between_layers": True,
+        },
+        transformer_params: dict = {
+            "embedding_dim": 64,
+            "num_layers": 2,
+            "dim_feedforward": 256,  # typically 4 * embedding_dim
+            "num_heads": 8,
+            "dropout": 0.1,
+        },
+        mlp_params: dict = {"num_hidden_layers": 2, "dueling_dqn": True},
         validation_interval: int = 5,
         plotting_interval: int = 20,
         train_seed: int = 5,
@@ -112,7 +126,11 @@ class DQNAgent(LongTermAgent):
             min_epsilon: The minimum value of epsilon for exploration.
             gamma: The discount factor for future rewards.
             learning_rate: The learning rate for the optimizer.
-            dqn_params: A dictionary containing the parameters for the DQN model.
+            architecture_type: The type of architecture to use: "stare", "gcn", or "transformer"
+            stare_params: Parameters specific to StarE architecture
+            gcn_params: Parameters specific to vanilla GCN architecture
+            transformer_params: Parameters specific to Transformer architecture
+            mlp_params: Parameters for the MLP heads (shared across architectures)
             validation_interval: The interval for validation during training.
             plotting_interval: The interval for plotting the results.
             train_seed: The seed for the training environment.
@@ -134,6 +152,19 @@ class DQNAgent(LongTermAgent):
 
         super().__init__(**params_to_save)
 
+        # Validate architecture type
+        valid_architectures = ["stare", "gcn", "transformer"]
+        if architecture_type.lower() not in valid_architectures:
+            raise ValueError(
+                f"architecture_type must be one of {valid_architectures}, got {architecture_type}"
+            )
+
+        self.architecture_type = architecture_type.lower()
+        self.stare_params = stare_params
+        self.gcn_params = gcn_params
+        self.transformer_params = transformer_params
+        self.mlp_params = mlp_params
+
         self.num_iterations = num_iterations
         self.replay_buffer_size = replay_buffer_size
         self.warm_start = warm_start
@@ -145,7 +176,6 @@ class DQNAgent(LongTermAgent):
         self.min_epsilon = min_epsilon
         self.gamma = gamma
         self.learning_rate = learning_rate
-        self.dqn_params = dqn_params
         self.validation_interval = validation_interval
         self.plotting_interval = plotting_interval
         self.train_seed = train_seed
@@ -164,33 +194,35 @@ class DQNAgent(LongTermAgent):
         self.forget2int = {v: k for k, v in self.forget2str.items()}
         self.remember2int = {v: k for k, v in self.remember2str.items()}
 
-        self.dqn_params["device"] = self.device
-        self.dqn_params["entities"] = [
-            e for entities in self.env.unwrapped.entities.values() for e in entities
-        ]  # main entities
-        self.dqn_params["entities"] += ["user"]  # add user entity
-        self.dqn_params["entities"] += [
-            str(i) for i in range(env_config["terminates_at"] * 2)
-        ]  # number entities for `num_recalled`
-
-        # Add date strings
-        self.dqn_params["entities"] += [
-            (self.base_date + timedelta(days=i)).isoformat(timespec="seconds")
-            for i in range(env_config["terminates_at"] + 2)
-        ]  # date entities for temporal reasoning
-
-        # Main triple relations have "inv", while qualifier relations don't have "inv".
-        self.dqn_params["relations"] = (
-            self.env.unwrapped.relations
-            + [rel + "_inv" for rel in self.env.unwrapped.relations]
-            + [
-                "current_time",
-                "time_added",
-                "last_accessed",
-                "num_recalled",
-                "derived_from",
+        # Prepare parameters for GNN initialization
+        gnn_params = {
+            "device": self.device,
+            "entities": [
+                e for entities in self.env.unwrapped.entities.values() for e in entities
             ]
-        )
+            + ["user"]
+            + [str(i) for i in range(env_config["terminates_at"] * 2)]
+            + [
+                (self.base_date + timedelta(days=i)).isoformat(timespec="seconds")
+                for i in range(env_config["terminates_at"] + 2)
+            ],
+            "relations": (
+                self.env.unwrapped.relations
+                + [rel + "_inv" for rel in self.env.unwrapped.relations]
+                + [
+                    "current_time",
+                    "time_added",
+                    "last_accessed",
+                    "num_recalled",
+                    "derived_from",
+                ]
+            ),
+            "architecture_type": self.architecture_type,
+            "stare_params": self.stare_params,
+            "gcn_params": self.gcn_params,
+            "transformer_params": self.transformer_params,
+            "mlp_params": self.mlp_params,
+        }
 
         self.separate_networks = separate_networks
 
@@ -199,7 +231,9 @@ class DQNAgent(LongTermAgent):
         self.remember_needs_rl = remember_policy == "rl"
 
         # Validate separate_networks usage
-        if self.separate_networks and not (self.forget_needs_rl and self.remember_needs_rl):
+        if self.separate_networks and not (
+            self.forget_needs_rl and self.remember_needs_rl
+        ):
             raise ValueError(
                 "separate_networks=True only makes sense when both forget_policy='rl' "
                 f"and remember_policy='rl'. Got forget_policy='{forget_policy}' and "
@@ -208,21 +242,17 @@ class DQNAgent(LongTermAgent):
 
         if self.separate_networks and (self.forget_needs_rl and self.remember_needs_rl):
             # Create separate networks for forget and remember policies
-            self.dqn_forget = GNN(separate_network_type="forget", **self.dqn_params)
-            self.dqn_target_forget = GNN(
-                separate_network_type="forget", **self.dqn_params
-            )
+            self.dqn_forget = GNN(separate_network_type="forget", **gnn_params)
+            self.dqn_target_forget = GNN(separate_network_type="forget", **gnn_params)
             self.dqn_target_forget.load_state_dict(self.dqn_forget.state_dict())
             self.dqn_target_forget.eval()
             self.optimizer_forget = optim.Adam(
                 list(self.dqn_forget.parameters()), lr=self.learning_rate
             )
 
-            self.dqn_remember = GNN(
-                separate_network_type="remember", **self.dqn_params
-            )
+            self.dqn_remember = GNN(separate_network_type="remember", **gnn_params)
             self.dqn_target_remember = GNN(
-                separate_network_type="remember", **self.dqn_params
+                separate_network_type="remember", **gnn_params
             )
             self.dqn_target_remember.load_state_dict(self.dqn_remember.state_dict())
             self.dqn_target_remember.eval()
@@ -236,11 +266,11 @@ class DQNAgent(LongTermAgent):
             self.optimizer = None
         else:
             # Use shared network (existing behavior)
-            self.dqn_params["forget_needs_rl"] = self.forget_needs_rl
-            self.dqn_params["remember_needs_rl"] = self.remember_needs_rl
+            gnn_params["forget_needs_rl"] = self.forget_needs_rl
+            gnn_params["remember_needs_rl"] = self.remember_needs_rl
 
-            self.dqn = GNN(**self.dqn_params)
-            self.dqn_target = GNN(**self.dqn_params)
+            self.dqn = GNN(**gnn_params)
+            self.dqn_target = GNN(**gnn_params)
             self.dqn_target.load_state_dict(self.dqn.state_dict())
             self.dqn_target.eval()
 
@@ -270,60 +300,81 @@ class DQNAgent(LongTermAgent):
         r"""Save the number of parameters in the model."""
         if self.separate_networks:
             dict_ = {"total": 0}
-            
+
             if self.dqn_forget is not None:
                 forget_params = self._count_network_parameters(self.dqn_forget)
                 dict_["dqn_forget"] = forget_params
                 dict_["total"] += forget_params["total"]
-            
+
             if self.dqn_remember is not None:
                 remember_params = self._count_network_parameters(self.dqn_remember)
                 dict_["dqn_remember"] = remember_params
                 dict_["total"] += remember_params["total"]
         else:
             dict_ = self._count_network_parameters(self.dqn)
-        
+
         write_yaml(dict_, os.path.join(self.default_root_dir, "num_params.yaml"))
 
     def _count_network_parameters(self, network):
         """Count parameters for a network, handling both GNN and Transformer architectures."""
         if network.architecture_type == "transformer":
             total_params = sum(p.numel() for p in network.parameters())
-            
+
             params_dict = {
                 "total": total_params,
                 "architecture": "transformer",
             }
-            
+
             transformer_model = network.transformer_model
-            params_dict.update({
-                "tokenizer": sum(p.numel() for p in transformer_model.tokenizer.parameters()),
-                "transformer_encoder": sum(p.numel() for p in transformer_model.transformer.parameters()),
-            })
-            
-            if hasattr(transformer_model, 'attention_aggregator_forget'):
+
+            # Detailed breakdown of transformer tokenizer components
+            tokenizer = transformer_model.tokenizer
+            params_dict.update(
+                {
+                    "tokenizer_entity_embeddings": tokenizer.entity_embeddings.numel(),
+                    "tokenizer_relation_embeddings": tokenizer.relation_embeddings.numel(),
+                    "tokenizer_qualifier_mlp": sum(
+                        p.numel() for p in tokenizer.qualifier_mlp.parameters()
+                    ),
+                    "tokenizer_qualifier_attention": sum(
+                        p.numel() for p in tokenizer.qualifier_attention.parameters()
+                    ),
+                    "tokenizer_token_projection": sum(
+                        p.numel() for p in tokenizer.token_projection.parameters()
+                    ),
+                }
+            )
+
+            # Transformer encoder
+            params_dict["transformer_encoder"] = sum(
+                p.numel() for p in transformer_model.transformer.parameters()
+            )
+
+            # Policy-specific components
+            if hasattr(transformer_model, "attention_aggregator_forget"):
                 params_dict["attention_aggregator_forget"] = sum(
-                    p.numel() for p in transformer_model.attention_aggregator_forget.parameters()
+                    p.numel()
+                    for p in transformer_model.attention_aggregator_forget.parameters()
                 )
-            if hasattr(transformer_model, 'mlp_forget'):
+            if hasattr(transformer_model, "mlp_forget"):
                 params_dict["mlp_forget"] = sum(
                     p.numel() for p in transformer_model.mlp_forget.parameters()
                 )
-            if hasattr(transformer_model, 'mlp_remember'):
+            if hasattr(transformer_model, "mlp_remember"):
                 params_dict["mlp_remember"] = sum(
                     p.numel() for p in transformer_model.mlp_remember.parameters()
                 )
-            
+
             return params_dict
         else:
             params_dict = {
                 "total": sum(p.numel() for p in network.parameters()),
-                "architecture": "gnn",
+                "architecture": network.architecture_type,
                 "gcn_layers": sum(p.numel() for p in network.gcn_layers.parameters()),
                 "entity_embeddings": network.entity_embeddings.numel(),
                 "relation_embeddings": network.relation_embeddings.numel(),
             }
-            
+
             if hasattr(network, "attention_aggregator_forget"):
                 params_dict["attention_aggregator_forget"] = sum(
                     p.numel() for p in network.attention_aggregator_forget.parameters()
@@ -336,7 +387,7 @@ class DQNAgent(LongTermAgent):
                 params_dict["mlp_forget"] = sum(
                     p.numel() for p in network.mlp_forget.parameters()
                 )
-            
+
             return params_dict
 
     def init_memory_systems(self) -> None:
@@ -816,7 +867,7 @@ class DQNAgent(LongTermAgent):
                 self.dqn_remember.eval()
         else:
             self.dqn.eval()
-            
+
         scores_temp, states, q_values, actions = self.validate_test_middle("val")
 
         num_episodes = self.iteration_idx // (self.env_config["terminates_at"] + 1) - 1
@@ -839,7 +890,7 @@ class DQNAgent(LongTermAgent):
             states, q_values, actions, self.default_root_dir, "val", num_episodes
         )
         self.env.close()
-        
+
         if self.separate_networks:
             if self.dqn_forget is not None:
                 self.dqn_forget.train()
@@ -848,17 +899,19 @@ class DQNAgent(LongTermAgent):
         else:
             self.dqn.train()
 
-    def _save_separate_networks_validation(self, scores_temp: list, num_episodes: int) -> None:
+    def _save_separate_networks_validation(
+        self, scores_temp: list, num_episodes: int
+    ) -> None:
         """Save validation checkpoints for separate networks."""
         mean_score = round(np.mean(scores_temp).item())
-        
+
         # Create checkpoint dictionary
         checkpoint = {}
         if self.dqn_forget is not None:
-            checkpoint['dqn_forget'] = self.dqn_forget.state_dict()
+            checkpoint["dqn_forget"] = self.dqn_forget.state_dict()
         if self.dqn_remember is not None:
-            checkpoint['dqn_remember'] = self.dqn_remember.state_dict()
-        
+            checkpoint["dqn_remember"] = self.dqn_remember.state_dict()
+
         filename = os.path.join(
             self.default_root_dir, f"episode={num_episodes}_val-score={mean_score}.pt"
         )
@@ -876,6 +929,7 @@ class DQNAgent(LongTermAgent):
             scores_to_compare.append(score)
 
         from .utils import list_duplicates_of
+
         indexes = list_duplicates_of(scores_to_compare, max(scores_to_compare))
         file_to_keep = self.val_file_names[indexes[-1]]
 
@@ -928,7 +982,7 @@ class DQNAgent(LongTermAgent):
 
         self.plot_results("all", save_fig=True)
         self.env.close()
-        
+
         if self.separate_networks:
             if self.dqn_forget is not None:
                 self.dqn_forget.train()
@@ -945,13 +999,13 @@ class DQNAgent(LongTermAgent):
         else:
             # Load validation checkpoint
             checkpoint_dict = torch.load(self.val_file_names[0])
-        
+
         # Load state dicts for available networks
-        if self.dqn_forget is not None and 'dqn_forget' in checkpoint_dict:
-            self.dqn_forget.load_state_dict(checkpoint_dict['dqn_forget'])
-        
-        if self.dqn_remember is not None and 'dqn_remember' in checkpoint_dict:
-            self.dqn_remember.load_state_dict(checkpoint_dict['dqn_remember'])
+        if self.dqn_forget is not None and "dqn_forget" in checkpoint_dict:
+            self.dqn_forget.load_state_dict(checkpoint_dict["dqn_forget"])
+
+        if self.dqn_remember is not None and "dqn_remember" in checkpoint_dict:
+            self.dqn_remember.load_state_dict(checkpoint_dict["dqn_remember"])
 
     def plot_results(self, to_plot: str = "all", save_fig: bool = False) -> None:
         r"""Plot things for DQN training.
@@ -982,3 +1036,25 @@ class DQNAgent(LongTermAgent):
             to_plot,
             save_fig,
         )
+
+    def get_model_param_count(self) -> dict:
+        """Get the parameter count for the model(s)."""
+        if self.separate_networks:
+            param_dict = {"total_params": 0}
+
+            if self.dqn_forget is not None:
+                forget_counts = self._count_network_parameters(self.dqn_forget)
+                param_dict.update({f"forget_{k}": v for k, v in forget_counts.items()})
+                param_dict["total_params"] += forget_counts["total"]
+
+            if self.dqn_remember is not None:
+                remember_counts = self._count_network_parameters(self.dqn_remember)
+                param_dict.update(
+                    {f"remember_{k}": v for k, v in remember_counts.items()}
+                )
+                param_dict["total_params"] += remember_counts["total"]
+        else:
+            param_dict = self._count_network_parameters(self.dqn)
+            param_dict["total_params"] = param_dict["total"]
+
+        return param_dict

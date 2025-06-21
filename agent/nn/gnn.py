@@ -18,77 +18,103 @@ class GNN(torch.nn.Module):
     or StarEConv layers and two MLPs for the two memory management polices,
     respectively.
 
-    Now supports both GNN-based and Transformer-based architectures.
+    Now supports StarE, vanilla GCN, and Transformer architectures.
     """
 
     def __init__(
         self,
         entities: list[str],
         relations: list[str],
-        gcn_layer_params: dict = {
-            "type": "StarE",
-            "embedding_dim": 8,
+        architecture_type: str = "stare",  # "stare", "gcn", or "transformer"
+        stare_params: dict = {
+            "embedding_dim": 64,
             "num_layers": 2,
             "gcn_drop": 0.1,
             "triple_qual_weight": 0.8,
+            "relu_between_layers": True,
+            "dropout_between_layers": True,
         },
-        relu_between_gcn_layers: bool = True,
-        dropout_between_gcn_layers: bool = True,
+        gcn_params: dict = {
+            "embedding_dim": 64,
+            "num_layers": 2,
+            "gcn_drop": 0.1,
+            "relu_between_layers": True,
+            "dropout_between_layers": True,
+        },
+        transformer_params: dict = {
+            "embedding_dim": 64,
+            "num_layers": 2,
+            "dim_feedforward": 256,
+            "num_heads": 8,
+            "dropout": 0.1,
+        },
         mlp_params: dict = {"num_hidden_layers": 2, "dueling_dqn": True},
-        rotational_for_relation: bool = True,
         device: str = "cpu",
         forget_needs_rl: bool = True,
         remember_needs_rl: bool = True,
         separate_network_type: str = None,
-        architecture_type: str = "gnn",  # New parameter: "gnn" or "transformer"
-        transformer_params: dict = {  # New parameter for transformer config
-            "num_layers": 2,
-            "num_heads": 8,
-            "dropout": 0.1,
-        },
+        rotational_for_relation: bool = True,
     ) -> None:
         """Initialize the GNN/Transformer model.
 
         Args:
             entities: List of entities
             relations: List of relations
-            gcn_layer_params: The parameters for the GCN layers
-            relu_between_gcn_layers: Whether to apply ReLU activation between GCN layers
-            dropout_between_gcn_layers: Whether to apply dropout between GCN layers
-            mlp_params: The parameters for the MLPs
-            rotational_for_relation: Whether to use rotational embeddings for relations
+            architecture_type: Type of architecture: "stare", "gcn", or "transformer"
+            stare_params: Parameters for StarE architecture
+            gcn_params: Parameters for vanilla GCN architecture
+            transformer_params: Parameters for Transformer architecture
+            mlp_params: Parameters for the MLP heads
             device: The device to use. Default is "cpu".
             forget_needs_rl: Whether forget policy needs RL components
             remember_needs_rl: Whether remember policy needs RL components
             separate_network_type: Type of separate network ("forget", "remember", or None for shared)
-            architecture_type: Type of architecture to use ("gnn" or "transformer")
-            transformer_params: Parameters for transformer architecture
-
+            rotational_for_relation: Whether to use rotational embeddings for relations
         """
         super(GNN, self).__init__()
+        
+        # Validate architecture type
+        valid_architectures = ["stare", "gcn", "transformer"]
+        if architecture_type.lower() not in valid_architectures:
+            raise ValueError(f"architecture_type must be one of {valid_architectures}, got {architecture_type}")
+
         self.entities = entities
         self.relations = relations
-        self.gcn_layer_params = gcn_layer_params
-        self.gcn_type = gcn_layer_params["type"].lower()
+        self.architecture_type = architecture_type.lower()
+        self.stare_params = stare_params
+        self.gcn_params = gcn_params
+        self.transformer_params = transformer_params
         self.mlp_params = mlp_params
-        self.rotational_for_relation = rotational_for_relation
         self.device = device
-        self.embedding_dim = gcn_layer_params["embedding_dim"]
         self.forget_needs_rl = forget_needs_rl
         self.remember_needs_rl = remember_needs_rl
         self.separate_network_type = separate_network_type
-        self.architecture_type = architecture_type.lower()
-        self.transformer_params = transformer_params
+        self.rotational_for_relation = rotational_for_relation
+
+        # Get architecture-specific parameters
+        if self.architecture_type == "stare":
+            arch_params = self.stare_params
+            self.gcn_type = "stare"
+        elif self.architecture_type == "gcn":
+            arch_params = self.gcn_params
+            self.gcn_type = "gcn"
+        elif self.architecture_type == "transformer":
+            arch_params = self.transformer_params
+        else:
+            raise ValueError(f"Unsupported architecture type: {self.architecture_type}")
+
+        self.embedding_dim = arch_params["embedding_dim"]
 
         # If using transformer architecture, create transformer model and return
         if self.architecture_type == "transformer":
             self.transformer_model = TransformerMemoryNet(
                 entities=entities,
                 relations=relations,
-                embedding_dim=self.embedding_dim,
-                num_transformer_layers=transformer_params["num_layers"],
-                num_heads=transformer_params["num_heads"],
-                dropout=transformer_params["dropout"],
+                embedding_dim=self.transformer_params["embedding_dim"],
+                dim_feedforward=self.transformer_params["dim_feedforward"],
+                num_transformer_layers=self.transformer_params["num_layers"],
+                num_heads=self.transformer_params["num_heads"],
+                dropout=self.transformer_params["dropout"],
                 mlp_params=mlp_params,
                 device=device,
                 forget_needs_rl=forget_needs_rl,
@@ -99,7 +125,7 @@ class GNN(torch.nn.Module):
             self.to(self.device)
             return
 
-        # Continue with GNN initialization for non-transformer architectures
+        # Continue with GNN initialization for StarE/GCN architectures
         self.entity_to_idx = {entity: idx for idx, entity in enumerate(self.entities)}
         self.relation_to_idx = {
             relation: idx for idx, relation in enumerate(self.relations)
@@ -130,27 +156,27 @@ class GNN(torch.nn.Module):
             ).to(self.device)
             torch.nn.init.xavier_normal_(self.relation_embeddings)
 
-        self.relu_between_gcn_layers = relu_between_gcn_layers
-        self.dropout_between_gcn_layers = dropout_between_gcn_layers
+        self.relu_between_gcn_layers = arch_params.get("relu_between_layers")
+        self.dropout_between_gcn_layers = arch_params.get("dropout_between_layers")
         self.relu = torch.nn.ReLU()
-        self.drop = torch.nn.Dropout(self.gcn_layer_params["gcn_drop"])
+        self.drop = torch.nn.Dropout(arch_params.get("gcn_drop"))
 
-        if self.gcn_type.lower() == "stare":
+        if self.gcn_type == "stare":
             self.gcn_layers = torch.nn.ModuleList(
                 [
                     StarEConvLayer(
                         in_channels=self.embedding_dim,
                         out_channels=self.embedding_dim,
                         num_rels=len(relations),
-                        gcn_drop=self.gcn_layer_params["gcn_drop"],
-                        triple_qual_weight=self.gcn_layer_params["triple_qual_weight"],
+                        gcn_drop=arch_params.get("gcn_drop"),
+                        triple_qual_weight=arch_params.get("triple_qual_weight"),
                         device=device,
                     )
-                    for _ in range(self.gcn_layer_params["num_layers"])
+                    for _ in range(arch_params["num_layers"])
                 ]
             ).to(self.device)
 
-        elif self.gcn_type.lower() == "vanilla" or self.gcn_type.lower() == "gcn":
+        elif self.gcn_type == "gcn":
             self.gcn_layers = torch.nn.ModuleList(
                 [
                     GCNConv(
@@ -160,7 +186,7 @@ class GNN(torch.nn.Module):
                         add_self_loops=False,
                         normalize=False,
                     )
-                    for _ in range(self.gcn_layer_params["num_layers"])
+                    for _ in range(arch_params["num_layers"])
                 ]
             ).to(self.device)
 
@@ -381,7 +407,7 @@ class GNN(torch.nn.Module):
 
         num_short_memories = torch.tensor(
             [len(short_memory_idx) for short_memory_idx in short_memory_idx_batch],
-            device=self.device
+            device=self.device,
         )
         short_memory_idx = torch.cat(
             [a + b for a, b in zip(short_memory_idx_batch, edge_offset_batch)], dim=0
@@ -415,17 +441,21 @@ class GNN(torch.nn.Module):
         # If using transformer, delegate to transformer model
         if self.architecture_type == "transformer":
             return self.transformer_model(data, policy_type)
-        
+
         # Continue with existing GNN forward pass
         # Validate policy type based on network configuration
         if self.separate_network_type == "forget" and policy_type != "forget":
-            raise ValueError(f"This network is configured for forget policy only, got {policy_type}")
+            raise ValueError(
+                f"This network is configured for forget policy only, got {policy_type}"
+            )
         if self.separate_network_type == "remember" and policy_type != "remember":
-            raise ValueError(f"This network is configured for remember policy only, got {policy_type}")
-        
-        if policy_type == "remember" and not hasattr(self, 'mlp_remember'):
+            raise ValueError(
+                f"This network is configured for remember policy only, got {policy_type}"
+            )
+
+        if policy_type == "remember" and not hasattr(self, "mlp_remember"):
             raise ValueError("Remember policy components not available in this network")
-        if policy_type == "forget" and not hasattr(self, 'mlp_forget'):
+        if policy_type == "forget" and not hasattr(self, "mlp_forget"):
             raise ValueError("Forget policy components not available in this network")
 
         (
@@ -448,7 +478,7 @@ class GNN(torch.nn.Module):
                     edge_type=edge_type,
                     quals=quals,
                 )
-            elif "vanilla" in self.gcn_type:
+            elif "gcn" in self.gcn_type or "vanilla" in self.gcn_type:
                 entity_embeddings = layer_(entity_embeddings, edge_idx)
             else:
                 raise ValueError(f"{self.gcn_type} is not a valid GNN type.")

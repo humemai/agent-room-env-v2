@@ -1,6 +1,5 @@
 import json
 import os
-import sys
 from collections import defaultdict
 from glob import glob
 
@@ -59,8 +58,8 @@ for config, scores in sorted(results_by_config.items()):
     records.append(
         {
             "room_size": room_size,
-            "mean_score": np.mean(scores),
-            "std_score": np.std(scores),
+            "test_mean": np.mean(scores),
+            "test_std": np.std(scores),
             "qa_policy": qa_policy,
             "explore_policy": explore_policy,
             "forget_policy": forget_policy,
@@ -108,7 +107,7 @@ for room_filter in room_sizes:
             columns="memory_size"
         )
         # Sort by mean_score in descending order
-        memory_df = memory_df.sort_values(by="mean_score", ascending=False).reset_index(
+        memory_df = memory_df.sort_values(by="test_mean", ascending=False).reset_index(
             drop=True
         )
 
@@ -127,7 +126,7 @@ for room_filter in room_sizes:
     print(f"Memory sizes analyzed: {memory_sizes}")
 
     # Find best configuration across all memory sizes for this room
-    best_overall = df_filtered.loc[df_filtered["mean_score"].idxmax()]
+    best_overall = df_filtered.loc[df_filtered["test_mean"].idxmax()]
     print(f"\nBest overall configuration for {room_filter}:")
     print(f"  Memory Size: {best_overall['memory_size']}")
     print(f"  QA Policy: {best_overall['qa_policy']}")
@@ -135,7 +134,7 @@ for room_filter in room_sizes:
     print(f"  MM Forget Policy: {best_overall['forget_policy']}")
     print(f"  MM Remember Policy: {best_overall['remember_policy']}")
     print(
-        f"  Score: {best_overall['mean_score']:.4f} ± {best_overall['std_score']:.4f}"
+        f"  Score: {best_overall['test_mean']:.4f} ± {best_overall['test_std']:.4f}"
     )
 
     # Export each room size DataFrame to separate files
@@ -143,7 +142,7 @@ for room_filter in room_sizes:
 
     # Export global results (all data for the room size, sorted by mean_score)
     global_section = df_filtered.sort_values(
-        by="mean_score", ascending=False
+        by="test_mean", ascending=False
     ).reset_index(drop=True)
 
     # Save JSON file
@@ -159,7 +158,7 @@ for room_filter in room_sizes:
     
     # Add overall table
     markdown_content += "## Overall Results (All Memory Sizes)\n\n"
-    markdown_content += global_section.to_markdown(index=False, floatfmt=".4f")
+    markdown_content += global_section.to_markdown(index=False, floatfmt=".0f")
     markdown_content += "\n\n"
     
     # Add separate table for each memory size
@@ -167,13 +166,13 @@ for room_filter in room_sizes:
         memory_df = df_filtered[df_filtered["memory_size"] == memory_size].drop(
             columns="memory_size"
         )
-        memory_df = memory_df.sort_values(by="mean_score", ascending=False).reset_index(
+        memory_df = memory_df.sort_values(by="test_mean", ascending=False).reset_index(
             drop=True
         )
         
         markdown_content += f"## Memory Size {memory_size}\n\n"
         markdown_content += f"Total configurations: {len(memory_df)}\n\n"
-        markdown_content += memory_df.to_markdown(index=False, floatfmt=".4f")
+        markdown_content += memory_df.to_markdown(index=False, floatfmt=".0f")
         markdown_content += "\n\n"
 
     with open(markdown_filename, "w") as f:
@@ -231,8 +230,8 @@ for room_size_to_plot in room_sizes:
                 ]
                 if len(sub_df) > 0:  # Check if data exists for this combination
                     x = sub_df["memory_size"]
-                    y = sub_df["mean_score"]
-                    yerr = sub_df["std_score"]
+                    y = sub_df["test_mean"]
+                    yerr = sub_df["test_std"]
 
                     ax.plot(x, y, label=forget_policy.upper(), linewidth=line_width)
                     if include_shading:
