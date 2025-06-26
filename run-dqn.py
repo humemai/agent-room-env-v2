@@ -27,13 +27,14 @@ def run_dqn_experiment(params):
     ) = params
     train_seed = test_seed + 5
 
+    batch_size = 32
     terminates_at = 99
     num_total_questions = 1000
-    num_episodes = 100  # should be between 100 and 500
+    num_episodes = 200  # should be between 100 and 500
     num_iterations = (terminates_at + 1) * num_episodes
-    num_target_syncs = 200  # should be between 200 and 1000
+    num_target_syncs = 400
     target_update_interval = num_iterations // num_target_syncs
-    epsilon_decay_until = num_iterations // 5  # 20 percent of the iterations
+    epsilon_decay_until = num_iterations // 2  # 50% of iterations
     warm_start = num_iterations // 5  # 20 percent of the iterations
 
     print(
@@ -89,12 +90,12 @@ def run_dqn_experiment(params):
         forget_policy=forget_policy,
         remember_policy=remember_policy,
         max_long_term_memory_size=max_memory,
-        num_samples_for_results={"val": 1, "test": 5},
+        num_samples_for_results={"val": 5, "test": 5},
         save_results=True,
         default_root_dir="training-results-dqn",
         num_iterations=num_iterations,
         replay_buffer_size=num_iterations,
-        batch_size=32,
+        batch_size=batch_size,
         warm_start=warm_start,
         target_update_interval=target_update_interval,
         epsilon_decay_until=epsilon_decay_until,
@@ -107,7 +108,7 @@ def run_dqn_experiment(params):
         gcn_params=gcn_params,
         transformer_params=transformer_params,
         mlp_params=mlp_params,
-        validation_interval=1,
+        validation_interval=5,
         plotting_interval=10,
         train_seed=train_seed,
         test_seed=test_seed,
@@ -123,7 +124,7 @@ def run_dqn_experiment(params):
 
 
 if __name__ == "__main__":
-    test_seeds = [0]
+    test_seeds = [0, 1, 2, 3, 4]
     architecture_types = [
         # "stare",
         # "gcn",
@@ -137,7 +138,7 @@ if __name__ == "__main__":
         # ("rl", "rl", "non_separate"),
     ]
 
-    network_sizes = ["small"]
+    network_sizes = ["small", "big"]
 
     # Define network size configurations
     network_configs = {
@@ -218,7 +219,7 @@ if __name__ == "__main__":
 
     random.shuffle(all_combinations)
 
-    num_processes = 1
+    num_processes = 2
     print(f"Running experiments with {num_processes} processes")
 
     with multiprocessing.Pool(num_processes) as pool:
