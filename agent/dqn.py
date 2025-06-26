@@ -72,14 +72,14 @@ class DQNAgent(LongTermAgent):
             "num_layers": 2,
             "gcn_drop": 0.1,
             "triple_qual_weight": 0.8,
-            "relu_between_layers": True,
+            "silu_between_layers": True,
             "dropout_between_layers": True,
         },
         gcn_params: dict = {
             "embedding_dim": 64,
             "num_layers": 2,
             "gcn_drop": 0.1,
-            "relu_between_layers": True,
+            "silu_between_layers": True,
             "dropout_between_layers": True,
         },
         transformer_params: dict = {

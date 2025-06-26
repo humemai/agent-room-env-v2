@@ -50,7 +50,7 @@ def run_dqn_experiment(params):
         "num_layers": num_layers,
         "gcn_drop": 0.1,
         "triple_qual_weight": 0.8,
-        "relu_between_layers": True,
+        "silu_between_layers": True,
         "dropout_between_layers": True,
     }
 
@@ -58,7 +58,7 @@ def run_dqn_experiment(params):
         "embedding_dim": embedding_dim,
         "num_layers": num_layers,
         "gcn_drop": 0.1,
-        "relu_between_layers": True,
+        "silu_between_layers": True,
         "dropout_between_layers": True,
     }
 

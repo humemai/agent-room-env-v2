@@ -31,14 +31,14 @@ class GNN(torch.nn.Module):
             "num_layers": 2,
             "gcn_drop": 0.1,
             "triple_qual_weight": 0.8,
-            "relu_between_layers": True,
+            "silu_between_layers": True,
             "dropout_between_layers": True,
         },
         gcn_params: dict = {
             "embedding_dim": 64,
             "num_layers": 2,
             "gcn_drop": 0.1,
-            "relu_between_layers": True,
+            "silu_between_layers": True,
             "dropout_between_layers": True,
         },
         transformer_params: dict = {
@@ -156,9 +156,9 @@ class GNN(torch.nn.Module):
             ).to(self.device)
             torch.nn.init.xavier_normal_(self.relation_embeddings)
 
-        self.relu_between_gcn_layers = arch_params.get("relu_between_layers")
+        self.silu_between_gcn_layers = arch_params.get("silu_between_layers")
         self.dropout_between_gcn_layers = arch_params.get("dropout_between_layers")
-        self.relu = torch.nn.ReLU()
+        self.silu = torch.nn.SiLU()
         self.drop = torch.nn.Dropout(arch_params.get("gcn_drop"))
 
         if self.gcn_type == "stare":
@@ -485,8 +485,8 @@ class GNN(torch.nn.Module):
 
             if self.dropout_between_gcn_layers:
                 entity_embeddings = self.drop(entity_embeddings)
-            if self.relu_between_gcn_layers:
-                entity_embeddings = F.relu(entity_embeddings)
+            if self.silu_between_gcn_layers:
+                entity_embeddings = F.silu(entity_embeddings)
 
         # Handle remember policy
         if policy_type == "remember":
