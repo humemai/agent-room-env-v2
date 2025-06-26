@@ -3,8 +3,6 @@ import os
 from collections import defaultdict
 from glob import glob
 
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
 import yaml

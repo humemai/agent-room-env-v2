@@ -125,19 +125,19 @@ def run_dqn_experiment(params):
 if __name__ == "__main__":
     test_seeds = [0]
     architecture_types = [
-        "stare",
-        "gcn",
+        # "stare",
+        # "gcn",
         "transformer",
     ]
     max_memories = [32]
     policy_combinations = [
-        ("lru", "rl"),
+        # ("lru", "rl"),
         ("rl", "all"),
-        ("rl", "rl", "separate"),
-        ("rl", "rl", "non_separate"),
+        # ("rl", "rl", "separate"),
+        # ("rl", "rl", "non_separate"),
     ]
 
-    network_sizes = ["small", "big"]
+    network_sizes = ["small"]
 
     # Define network size configurations
     network_configs = {
@@ -218,7 +218,8 @@ if __name__ == "__main__":
 
     random.shuffle(all_combinations)
 
-    num_processes = multiprocessing.cpu_count()  # or choose a fixed number
-    num_processes = 4
+    num_processes = 1
+    print(f"Running experiments with {num_processes} processes")
+
     with multiprocessing.Pool(num_processes) as pool:
         pool.map(run_dqn_experiment, all_combinations)

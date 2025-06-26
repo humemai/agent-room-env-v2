@@ -78,19 +78,6 @@
     "n_seeds":1
   },
   {
-    "architecture_type":"gcn",
-    "max_memory":32,
-    "forget_policy":"rl",
-    "remember_policy":"all",
-    "separate_networks":false,
-    "network_size":"big",
-    "test_mean":452.2,
-    "test_std":0.0,
-    "val_mean":661.0,
-    "val_std":0.0,
-    "n_seeds":1
-  },
-  {
     "architecture_type":"stare",
     "max_memory":32,
     "forget_policy":"rl",
@@ -100,6 +87,19 @@
     "test_mean":452.2,
     "test_std":0.0,
     "val_mean":638.0,
+    "val_std":0.0,
+    "n_seeds":1
+  },
+  {
+    "architecture_type":"gcn",
+    "max_memory":32,
+    "forget_policy":"rl",
+    "remember_policy":"all",
+    "separate_networks":false,
+    "network_size":"big",
+    "test_mean":452.2,
+    "test_std":0.0,
+    "val_mean":661.0,
     "val_std":0.0,
     "n_seeds":1
   },
@@ -126,6 +126,19 @@
     "test_mean":441.4,
     "test_std":0.0,
     "val_mean":580.0,
+    "val_std":0.0,
+    "n_seeds":1
+  },
+  {
+    "architecture_type":"gcn",
+    "max_memory":32,
+    "forget_policy":"rl",
+    "remember_policy":"rl",
+    "separate_networks":true,
+    "network_size":"big",
+    "test_mean":237.0,
+    "test_std":0.0,
+    "val_mean":313.0,
     "val_std":0.0,
     "n_seeds":1
   },
