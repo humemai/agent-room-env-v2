@@ -63,7 +63,7 @@ class LongTermAgent(Agent):
             "most_recently_added",
             "most_recently_used",
             "most_frequently_used",
-            "random",
+            "rl",  # 'rl' is a placeholder for future RL-based policies
         ], f"Invalid QA policy: {qa_policy}"
         self.qa_policy = qa_policy.lower()
 
@@ -72,6 +72,7 @@ class LongTermAgent(Agent):
             "avoid_walls",
             "bfs",
             "dijkstra",
+            "rl",  # 'rl' is a placeholder for future RL-based exploration policies
         ], f"Invalid explore policy: {explore_policy}"
         self.explore_policy = explore_policy.lower()
 
@@ -392,14 +393,7 @@ class LongTermAgent(Agent):
             assert row.rec is not None, "num_recalled must exist for long-term memory"
 
         # Apply the selected policy
-        if self.qa_policy == "random":
-            # Randomly choose one of the three policies
-            random_policy = random.choice(
-                ["most_recently_added", "most_recently_used", "most_frequently_used"]
-            )
-            return self._apply_qa_policy(random_policy, valid_long_term_rows, question)
-        else:
-            return self._apply_qa_policy(self.qa_policy, valid_long_term_rows, question)
+        return self._apply_qa_policy(self.qa_policy, valid_long_term_rows, question)
 
     def _apply_qa_policy(
         self, policy: str, rows: list, question: tuple[str, str]

@@ -806,6 +806,11 @@ def select_action(
 ) -> tuple[np.ndarray, np.ndarray]:
     r"""Select action(s) from the input state, with epsilon-greedy policy.
 
+    This function does not need gradient computation, since it has nothing to do with
+    loss calculation. It only selects actions based on the current state. Remember that
+    q-learning is an off-policy algorithm, so we can use the current policy to
+    select actions without affecting the training process.
+
     Args:
         state: This is the input to the neural network. Make sure that it's compatible
             with the input shape of the neural network. It's very likely that this
@@ -820,20 +825,25 @@ def select_action(
         q_values: dimension is [num_actions_taken, action_space_dim]
 
     """
-    # Since dqn requires a batch dimension, we need to encapsulate the state in a list
-    q_values = dqn(np.array([state], dtype=object), policy_type=policy_type)
+    dqn.eval()  # Set to evaluation mode
+    with torch.no_grad():  # Disable gradient computation
+        # Since dqn requires a batch dimension, we need to encapsulate the
+        # state in a list
+        q_values = dqn(np.array([state], dtype=object), policy_type=policy_type)
 
-    q_values = q_values[0]  # remove the dummy batch dimension
-    q_values = q_values.detach().cpu().numpy()
+        q_values = q_values[0]  # remove the dummy batch dimension
+        q_values = q_values.detach().cpu().numpy()
 
-    action_space_dim = q_values.shape[1]
+        action_space_dim = q_values.shape[1]
 
-    if greedy or epsilon < np.random.random():
-        selected_actions = q_values.argmax(axis=1)
-    else:
-        selected_actions = np.random.randint(0, action_space_dim, size=len(q_values))
+        if greedy or epsilon < np.random.random():
+            selected_actions = q_values.argmax(axis=1)
+        else:
+            selected_actions = np.random.randint(
+                0, action_space_dim, size=len(q_values)
+            )
 
-    return selected_actions, q_values
+        return selected_actions, q_values
 
 
 def save_validation(
@@ -865,7 +875,7 @@ def save_validation(
     filename = os.path.join(
         default_root_dir, f"episode={num_episodes}_val-score={mean_score}.pt"
     )
-    
+
     # Save the network state dict
     if dqn is not None:
         torch.save(dqn.state_dict(), filename)
