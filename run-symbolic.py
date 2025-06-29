@@ -1,6 +1,7 @@
 import itertools
 import logging
 import multiprocessing
+import random
 
 from rdflib import Namespace
 
@@ -67,6 +68,8 @@ if __name__ == "__main__":
             seeds, room_sizes, qa_policies, explore_policies, mm_policies, max_memories
         )
     )
+
+    random.shuffle(all_combinations)
 
     num_processes = multiprocessing.cpu_count()
     with multiprocessing.Pool(num_processes) as pool:

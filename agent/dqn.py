@@ -11,18 +11,10 @@ from rdflib import XSD, Literal, URIRef
 
 from .long import LongTermAgent
 from .nn import GNN
-from .utils import (
-    ReplayBuffer,
-    plot_results,
-    save_final_results,
-    save_states_q_values_actions,
-    save_validation,
-    select_action,
-    target_hard_update,
-    update_epsilon,
-    update_model,
-    write_yaml,
-)
+from .utils import (ReplayBuffer, plot_results, save_final_results,
+                    save_states_q_values_actions, save_validation,
+                    select_action, target_hard_update, update_epsilon,
+                    update_model, write_yaml)
 
 
 class DQNAgent(LongTermAgent):
