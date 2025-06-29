@@ -73,15 +73,15 @@ def run_dqn_experiment(params):
     ) = params
     train_seed = test_seed + 5
 
-    batch_size = 32
-    terminates_at = 99
-    num_total_questions = 1000
-    num_episodes = 200  # should be between 100 and 500
+    batch_size = 2
+    terminates_at = 9
+    num_total_questions = 20
+    num_episodes = 3  # should be between 100 and 500
     num_iterations = (terminates_at + 1) * num_episodes
-    num_target_syncs = 400
-    target_update_interval = num_iterations // num_target_syncs
+    # num_target_syncs = 400
+    target_update_interval = 3
     epsilon_decay_until = num_iterations // 2  # 50% of iterations
-    warm_start = num_iterations // 5  # 20 percent of the iterations
+    warm_start = 4
 
     print(
         f"Test seed: {test_seed}, Train seed: {train_seed}, Architecture: {architecture_type}, "
@@ -136,9 +136,9 @@ def run_dqn_experiment(params):
         forget_policy=forget_policy,
         remember_policy=remember_policy,
         max_long_term_memory_size=max_memory,
-        num_samples_for_results={"val": 5, "test": 5},
+        num_samples_for_results={"val": 3, "test": 3},
         save_results=True,
-        default_root_dir="training-results-dqn",
+        default_root_dir="training-results-foo",
         num_iterations=num_iterations,
         replay_buffer_size=num_iterations,
         batch_size=batch_size,
@@ -154,8 +154,8 @@ def run_dqn_experiment(params):
         gcn_params=gcn_params,
         transformer_params=transformer_params,
         mlp_params=mlp_params,
-        validation_interval=5,
-        plotting_interval=10,
+        validation_interval=2,
+        plotting_interval=5,
         train_seed=train_seed,
         test_seed=test_seed,
         device="cpu",
@@ -172,16 +172,16 @@ def run_dqn_experiment(params):
 if __name__ == "__main__":
     test_seeds = [0, 1, 2, 3, 4]
     architecture_types = [
-        # "stare",
-        # "gcn",
+        "stare",
+        "gcn",
         "transformer",
     ]
-    max_memories = [32]
+    max_memories = [16]
     policy_combinations = [
-        # ("lru", "rl"),
+        ("lru", "rl"),
         ("rl", "all"),
-        # ("rl", "rl", "separate"),
-        # ("rl", "rl", "non_separate"),
+        ("rl", "rl", "separate"),
+        ("rl", "rl", "non_separate"),
     ]
 
     network_sizes = ["small", "big"]
