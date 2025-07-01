@@ -183,8 +183,17 @@ class DQNAgent(LongTermAgent):
 
         self.forget2str = {0: "fifo", 1: "lru", 2: "lfu"}
         self.remember2str = {0: "remember", 1: "forget"}
+        self.qa2str = {
+            0: "most_recently_added",
+            1: "most_recently_used",
+            2: "most_frequently_used",
+        }
+        self.explore2str = {0: "dijkstra", 1: "bfs"}
+
         self.forget2int = {v: k for k, v in self.forget2str.items()}
         self.remember2int = {v: k for k, v in self.remember2str.items()}
+        self.qa2int = {v: k for k, v in self.qa2str.items()}
+        self.explore2int = {v: k for k, v in self.explore2str.items()}
 
         # Prepare parameters for GNN initialization
         gnn_params = {
@@ -221,50 +230,88 @@ class DQNAgent(LongTermAgent):
         # Determine which policies need RL
         self.forget_needs_rl = forget_policy == "rl"
         self.remember_needs_rl = remember_policy == "rl"
+        self.qa_needs_rl = qa_policy == "rl"
+        self.explore_needs_rl = explore_policy == "rl"
+
+        # Count how many policies need RL
+        rl_policies = []
+        if self.forget_needs_rl:
+            rl_policies.append("forget")
+        if self.remember_needs_rl:
+            rl_policies.append("remember")
+        if self.qa_needs_rl:
+            rl_policies.append("qa")
+        if self.explore_needs_rl:
+            rl_policies.append("explore")
 
         # Validate separate_networks usage
-        if self.separate_networks and not (
-            self.forget_needs_rl and self.remember_needs_rl
-        ):
+        if self.separate_networks and len(rl_policies) < 2:
             raise ValueError(
-                "separate_networks=True only makes sense when both forget_policy='rl' "
-                f"and remember_policy='rl'. Got forget_policy='{forget_policy}' and "
-                f"remember_policy='{remember_policy}'"
+                f"separate_networks=True requires at least 2 RL policies. "
+                f"Got {len(rl_policies)} RL policies: {rl_policies}. "
+                f"Use separate_networks=False when learning only one policy."
             )
 
-        if self.separate_networks and (self.forget_needs_rl and self.remember_needs_rl):
-            # Create separate networks for forget and remember policies
-            self.dqn_forget = GNN(separate_network_type="forget", **gnn_params)
-            self.dqn_target_forget = GNN(separate_network_type="forget", **gnn_params)
-            self.dqn_target_forget.load_state_dict(self.dqn_forget.state_dict())
-            self.dqn_target_forget.eval()
-            self.optimizer_forget = optim.Adam(
-                list(self.dqn_forget.parameters()), lr=self.learning_rate
-            )
+        if self.separate_networks:
+            # Create separate networks for each RL policy
+            self.networks = {}
+            self.target_networks = {}
+            self.optimizers = {}
 
-            self.dqn_remember = GNN(separate_network_type="remember", **gnn_params)
-            self.dqn_target_remember = GNN(
-                separate_network_type="remember", **gnn_params
-            )
-            self.dqn_target_remember.load_state_dict(self.dqn_remember.state_dict())
-            self.dqn_target_remember.eval()
-            self.optimizer_remember = optim.Adam(
-                list(self.dqn_remember.parameters()), lr=self.learning_rate
-            )
+            for policy in rl_policies:
+                # Each network is specialized for one policy only
+                policy_gnn_params = gnn_params.copy()
+                policy_gnn_params["separate_network_type"] = policy
+                policy_gnn_params["forget_needs_rl"] = policy == "forget"
+                policy_gnn_params["remember_needs_rl"] = policy == "remember"
+                policy_gnn_params["qa_needs_rl"] = policy == "qa"
+                policy_gnn_params["explore_needs_rl"] = policy == "explore"
+
+                self.networks[policy] = GNN(**policy_gnn_params)
+                
+                # QA doesn't need target network (contextual bandit)
+                if policy != "qa":
+                    self.target_networks[policy] = GNN(**policy_gnn_params)
+                    self.target_networks[policy].load_state_dict(
+                        self.networks[policy].state_dict()
+                    )
+                    self.target_networks[policy].eval()
+
+                    # Disable gradients for target network
+                    for param in self.target_networks[policy].parameters():
+                        param.requires_grad = False
+
+                self.optimizers[policy] = optim.Adam(
+                    list(self.networks[policy].parameters()), lr=self.learning_rate
+                )
 
             # Set shared networks to None
             self.dqn = None
             self.dqn_target = None
             self.optimizer = None
         else:
-            # Use shared network (existing behavior)
+            # Use shared network - all RL policies share the same backbone
+            gnn_params["separate_network_type"] = None  # Shared network
             gnn_params["forget_needs_rl"] = self.forget_needs_rl
             gnn_params["remember_needs_rl"] = self.remember_needs_rl
+            gnn_params["qa_needs_rl"] = self.qa_needs_rl
+            gnn_params["explore_needs_rl"] = self.explore_needs_rl
 
             self.dqn = GNN(**gnn_params)
-            self.dqn_target = GNN(**gnn_params)
-            self.dqn_target.load_state_dict(self.dqn.state_dict())
-            self.dqn_target.eval()
+            
+            # For shared networks, we still need target network even if QA is included
+            # because other policies (remember, forget, explore) need it
+            if any(policy == "rl" for policy in [forget_policy, remember_policy, explore_policy]):
+                self.dqn_target = GNN(**gnn_params)
+                self.dqn_target.load_state_dict(self.dqn.state_dict())
+                self.dqn_target.eval()
+
+                # Disable gradients for target network
+                for param in self.dqn_target.parameters():
+                    param.requires_grad = False
+            else:
+                # If only QA uses RL, no target network needed
+                self.dqn_target = None
 
             # optimizer
             self.optimizer = optim.Adam(
@@ -272,17 +319,14 @@ class DQNAgent(LongTermAgent):
             )
 
             # Set separate networks to None
-            self.dqn_forget = None
-            self.dqn_target_forget = None
-            self.optimizer_forget = None
-            self.dqn_remember = None
-            self.dqn_target_remember = None
-            self.optimizer_remember = None
+            self.networks = {}
+            self.target_networks = {}
+            self.optimizers = {}
 
         self.q_values = {
-            "train": {"remember": [], "forget": []},
-            "val": {"remember": [], "forget": []},
-            "test": {"remember": [], "forget": []},
+            "train": {"remember": [], "forget": [], "qa": [], "explore": []},
+            "val": {"remember": [], "forget": [], "qa": [], "explore": []},
+            "test": {"remember": [], "forget": [], "qa": [], "explore": []},
         }
 
         self._save_number_of_parameters()
@@ -293,15 +337,10 @@ class DQNAgent(LongTermAgent):
         if self.separate_networks:
             dict_ = {"total": 0}
 
-            if self.dqn_forget is not None:
-                forget_params = self._count_network_parameters(self.dqn_forget)
-                dict_["dqn_forget"] = forget_params
-                dict_["total"] += forget_params["total"]
-
-            if self.dqn_remember is not None:
-                remember_params = self._count_network_parameters(self.dqn_remember)
-                dict_["dqn_remember"] = remember_params
-                dict_["total"] += remember_params["total"]
+            for policy_name, network in self.networks.items():
+                policy_params = self._count_network_parameters(network)
+                dict_[f"{policy_name}_network"] = policy_params
+                dict_["total"] += policy_params["total"]
         else:
             dict_ = self._count_network_parameters(self.dqn)
 
@@ -352,6 +391,24 @@ class DQNAgent(LongTermAgent):
                 params_dict["mlp_forget"] = sum(
                     p.numel() for p in transformer_model.mlp_forget.parameters()
                 )
+            if hasattr(transformer_model, "attention_aggregator_qa"):
+                params_dict["attention_aggregator_qa"] = sum(
+                    p.numel()
+                    for p in transformer_model.attention_aggregator_qa.parameters()
+                )
+            if hasattr(transformer_model, "mlp_qa"):
+                params_dict["mlp_qa"] = sum(
+                    p.numel() for p in transformer_model.mlp_qa.parameters()
+                )
+            if hasattr(transformer_model, "attention_aggregator_explore"):
+                params_dict["attention_aggregator_explore"] = sum(
+                    p.numel()
+                    for p in transformer_model.attention_aggregator_explore.parameters()
+                )
+            if hasattr(transformer_model, "mlp_explore"):
+                params_dict["mlp_explore"] = sum(
+                    p.numel() for p in transformer_model.mlp_explore.parameters()
+                )
             if hasattr(transformer_model, "mlp_remember"):
                 params_dict["mlp_remember"] = sum(
                     p.numel() for p in transformer_model.mlp_remember.parameters()
@@ -371,13 +428,29 @@ class DQNAgent(LongTermAgent):
                 params_dict["attention_aggregator_forget"] = sum(
                     p.numel() for p in network.attention_aggregator_forget.parameters()
                 )
-            if hasattr(network, "mlp_remember"):
-                params_dict["mlp_remember"] = sum(
-                    p.numel() for p in network.mlp_remember.parameters()
-                )
             if hasattr(network, "mlp_forget"):
                 params_dict["mlp_forget"] = sum(
                     p.numel() for p in network.mlp_forget.parameters()
+                )
+            if hasattr(network, "attention_aggregator_qa"):
+                params_dict["attention_aggregator_qa"] = sum(
+                    p.numel() for p in network.attention_aggregator_qa.parameters()
+                )
+            if hasattr(network, "mlp_qa"):
+                params_dict["mlp_qa"] = sum(
+                    p.numel() for p in network.mlp_qa.parameters()
+                )
+            if hasattr(network, "attention_aggregator_explore"):
+                params_dict["attention_aggregator_explore"] = sum(
+                    p.numel() for p in network.attention_aggregator_explore.parameters()
+                )
+            if hasattr(network, "mlp_explore"):
+                params_dict["mlp_explore"] = sum(
+                    p.numel() for p in network.mlp_explore.parameters()
+                )
+            if hasattr(network, "mlp_remember"):
+                params_dict["mlp_remember"] = sum(
+                    p.numel() for p in network.mlp_remember.parameters()
                 )
 
             return params_dict
@@ -446,9 +519,19 @@ class DQNAgent(LongTermAgent):
         # encode observations as short-term
         self.encode_all_observations()
 
-    def step(
-        self, greedy: bool
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, list[str], bool]:
+    def step(self, greedy: bool) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        int,
+        list[str],
+        bool,
+    ]:
         r"""Step of the algorithm. This is the only step that interacts with the
         environment.
 
@@ -456,13 +539,81 @@ class DQNAgent(LongTermAgent):
             greedy: whether to use greedy policy
 
         Returns:
-            a_remember, q_remember, a_forget, q_forget, reward, answers, done
+            a_remember, q_remember, a_forget, q_forget, a_qa, q_qa, a_explore, q_explore, reward, answers, done
 
         """
-        # 1. generate answers and exploration direction
-        answers, explore_direction = self._generate_action_pair(self.observations)
+        # 1. QA policy - answer questions
+        answers = []
+        a_qa = np.array([np.nan])
+        q_qa = np.array([[np.nan] * len(self.qa2str)])
 
-        # 2-a. manage short-term memory (remember policy)
+        if self.qa_policy in [
+            "most_recently_added",
+            "most_recently_used",
+            "most_frequently_used",
+        ]:
+            # Use symbolic QA policy
+            a_qa = np.array([self.qa2int[self.qa_policy]])
+            for question in self.observations["questions"]:
+                answer = self.answer_question(question)
+                answers.append(str(answer))
+        elif self.qa_policy == "rl":
+            # Use RL QA policy
+            memory_list = self.humemai.to_list()
+            dqn_to_use = self._get_network_for_policy("qa")
+            a_qa, q_qa = select_action(
+                state=memory_list,
+                greedy=greedy,
+                dqn=dqn_to_use,
+                epsilon=self.epsilon,
+                policy_type="qa",
+            )
+            # Temporarily override qa_policy to use existing answer_question method
+            original_qa_policy = self.qa_policy
+            self.qa_policy = self.qa2str[a_qa.item()]
+            for question in self.observations["questions"]:
+                answer = self.answer_question(question)
+                answers.append(str(answer))
+            # Restore original policy
+            self.qa_policy = original_qa_policy
+        else:
+            raise NotImplementedError(
+                f"QA policy '{self.qa_policy}' is not implemented."
+            )
+
+        # 2. Explore policy - determine exploration direction
+        a_explore = np.array([np.nan])
+        q_explore = np.array([[np.nan] * len(self.explore2str)])
+
+        if self.explore_policy in ["dijkstra", "bfs"]:
+            # Use symbolic explore policy
+            a_explore = np.array([self.explore2int[self.explore_policy]])
+            explore_direction = self.explore()
+        elif self.explore_policy == "rl":
+            # Use RL explore policy
+            memory_list = self.humemai.to_list()
+            dqn_to_use = self._get_network_for_policy("explore")
+            a_explore, q_explore = select_action(
+                state=memory_list,
+                greedy=greedy,
+                dqn=dqn_to_use,
+                epsilon=self.epsilon,
+                policy_type="explore",
+            )
+            # Apply the selected exploration strategy
+            explore_strategy = self.explore2str[a_explore.item()]
+            if explore_strategy == "dijkstra":
+                explore_direction = self._explore_dijkstra()
+            elif explore_strategy == "bfs":
+                explore_direction = self._explore_bfs()
+            else:
+                raise ValueError(f"Unknown explore strategy: {explore_strategy}")
+        else:
+            raise NotImplementedError(
+                f"Explore policy '{self.explore_policy}' is not implemented."
+            )
+
+        # 3. Remember policy - manage short-term memory
         memory_list = self.humemai.to_list()
         short_list = [mem for mem in memory_list if "current_time" in mem[-1].keys()]
         assert len(short_list) > 0, "Short-term memory should not be empty."
@@ -473,11 +624,7 @@ class DQNAgent(LongTermAgent):
             q_remember = np.array([[np.nan] * len(self.remember2str)] * len(short_list))
 
         elif self.remember_policy == "rl":
-            if self.separate_networks:
-                dqn_to_use = self.dqn_remember
-            else:
-                dqn_to_use = self.dqn
-
+            dqn_to_use = self._get_network_for_policy("remember")
             a_remember, q_remember = select_action(
                 state=memory_list,
                 greedy=greedy,
@@ -509,7 +656,7 @@ class DQNAgent(LongTermAgent):
                 "Use 'all' or 'rl' to specify the policy."
             )
 
-        # 2-b. manage long-term memory (forget policy)
+        # 4. Forget policy - manage long-term memory
         a_forget = np.array([np.nan])
         q_forget = np.array([[np.nan] * len(self.forget2str)])
 
@@ -526,12 +673,7 @@ class DQNAgent(LongTermAgent):
                 a_forget_str = "lfu"
             elif self.forget_policy == "rl":
                 memory_list = self.humemai.to_list()  # get updated memory list
-
-                if self.separate_networks:
-                    dqn_to_use = self.dqn_forget
-                else:
-                    dqn_to_use = self.dqn
-
+                dqn_to_use = self._get_network_for_policy("forget")
                 a_forget, q_forget = select_action(
                     state=memory_list,
                     greedy=greedy,
@@ -566,6 +708,7 @@ class DQNAgent(LongTermAgent):
                     raise ValueError("No memory ID found for deletion.")
                 self.humemai.delete_memory(Literal(mem_id_to_delete))
 
+        # 5. Interact with environment
         (
             self.observations,
             reward,
@@ -579,10 +722,22 @@ class DQNAgent(LongTermAgent):
         self.current_step += 1
         self.current_time = self.base_date + timedelta(days=self.current_step)
 
-        # 3. encode_all_observations
+        # 6. encode_all_observations
         self.encode_all_observations()
 
-        return a_remember, q_remember, a_forget, q_forget, sum(reward), answers, done
+        return (
+            a_remember,
+            q_remember,
+            a_forget,
+            q_forget,
+            a_qa,
+            q_qa,
+            a_explore,
+            q_explore,
+            sum(reward),
+            answers,
+            done,
+        )
 
     def fill_replay_buffer(self) -> None:
         r"""Make the replay buffer full in the beginning with the uniformly-sampled
@@ -595,11 +750,17 @@ class DQNAgent(LongTermAgent):
         self.replay_buffer_forget = ReplayBuffer(
             self.replay_buffer_size, self.batch_size
         )
+        self.replay_buffer_qa = ReplayBuffer(self.replay_buffer_size, self.batch_size)
+        self.replay_buffer_explore = ReplayBuffer(
+            self.replay_buffer_size, self.batch_size
+        )
         done = True
 
         while (
             len(self.replay_buffer_remember) < self.warm_start
             or len(self.replay_buffer_forget) < self.warm_start
+            or len(self.replay_buffer_qa) < self.warm_start
+            or len(self.replay_buffer_explore) < self.warm_start
         ):
             if done:
                 self.reset()
@@ -611,6 +772,10 @@ class DQNAgent(LongTermAgent):
                     q_remember,
                     a_forget,
                     q_forget,
+                    a_qa,
+                    q_qa,
+                    a_explore,
+                    q_explore,
                     reward,
                     answers,
                     done,
@@ -639,19 +804,47 @@ class DQNAgent(LongTermAgent):
                         ]
                     )
 
+                if not np.isnan(a_qa).any():
+                    # For QA (contextual bandit), we don't need next_state or done
+                    # Store None for these to maintain interface compatibility
+                    self.replay_buffer_qa.store(
+                        *[
+                            state,
+                            a_qa,
+                            reward,
+                            None,  # next_state not needed for contextual bandit
+                            False,  # done not needed for contextual bandit
+                        ]
+                    )
+
+                if not np.isnan(a_explore).any():
+                    self.replay_buffer_explore.store(
+                        *[
+                            state,
+                            a_explore,
+                            reward,
+                            next_state,
+                            done,
+                        ]
+                    )
+
     def train(self) -> None:
         r"""Train the agent."""
         self.fill_replay_buffer()  # fill up the buffer till warm start size
 
         self.epsilons = []
-        self.training_loss = {"total": [], "remember": [], "forget": []}
+        self.training_loss = {
+            "total": [],
+            "remember": [],
+            "forget": [],
+            "qa": [],
+            "explore": [],
+        }
         self.scores = {"train": [], "val": [], "test": None}
 
         if self.separate_networks:
-            if self.dqn_forget is not None:
-                self.dqn_forget.train()
-            if self.dqn_remember is not None:
-                self.dqn_remember.train()
+            for network in self.networks.values():
+                network.train()
         else:
             self.dqn.train()
 
@@ -670,6 +863,10 @@ class DQNAgent(LongTermAgent):
                     q_remember,
                     a_forget,
                     q_forget,
+                    a_qa,
+                    q_qa,
+                    a_explore,
+                    q_explore,
                     reward,
                     answers,
                     done,
@@ -699,8 +896,33 @@ class DQNAgent(LongTermAgent):
                         ]
                     )
 
+                if not np.isnan(a_qa).any():
+                    # For QA (contextual bandit), we don't need next_state or done
+                    self.replay_buffer_qa.store(
+                        *[
+                            state,
+                            a_qa,
+                            reward,
+                            None,  # next_state not needed for contextual bandit
+                            False,  # done not needed for contextual bandit
+                        ]
+                    )
+
+                if not np.isnan(a_explore).any():
+                    self.replay_buffer_explore.store(
+                        *[
+                            state,
+                            a_explore,
+                            reward,
+                            next_state,
+                            done,
+                        ]
+                    )
+
                 self.q_values["train"]["forget"].append(q_forget)
                 self.q_values["train"]["remember"].append(q_remember)
+                self.q_values["train"]["qa"].append(q_qa)
+                self.q_values["train"]["explore"].append(q_explore)
                 self.iteration_idx += 1
 
             if done:
@@ -719,28 +941,23 @@ class DQNAgent(LongTermAgent):
                         self.validate()
 
             else:
-                loss_remember, loss_forget, loss = update_model(
+                loss_remember, loss_forget, loss_qa, loss_explore, loss = update_model(
                     forget_policy=self.forget_policy,
                     remember_policy=self.remember_policy,
+                    qa_policy=self.qa_policy,
+                    explore_policy=self.explore_policy,
                     replay_buffer_remember=self.replay_buffer_remember,
                     replay_buffer_forget=self.replay_buffer_forget,
+                    replay_buffer_qa=self.replay_buffer_qa,
+                    replay_buffer_explore=self.replay_buffer_explore,
                     optimizer=self.optimizer if not self.separate_networks else None,
-                    optimizer_forget=(
-                        self.optimizer_forget if self.separate_networks else None
-                    ),
-                    optimizer_remember=(
-                        self.optimizer_remember if self.separate_networks else None
-                    ),
+                    optimizers=self.optimizers if self.separate_networks else None,
                     device=self.device,
                     dqn=self.dqn if not self.separate_networks else None,
                     dqn_target=self.dqn_target if not self.separate_networks else None,
-                    dqn_forget=self.dqn_forget if self.separate_networks else None,
-                    dqn_target_forget=(
-                        self.dqn_target_forget if self.separate_networks else None
-                    ),
-                    dqn_remember=self.dqn_remember if self.separate_networks else None,
-                    dqn_target_remember=(
-                        self.dqn_target_remember if self.separate_networks else None
+                    networks=self.networks if self.separate_networks else None,
+                    target_networks=(
+                        self.target_networks if self.separate_networks else None
                     ),
                     ddqn=self.ddqn,
                     gamma=self.gamma,
@@ -752,6 +969,8 @@ class DQNAgent(LongTermAgent):
                 self.training_loss["total"].append(loss)
                 self.training_loss["remember"].append(loss_remember)
                 self.training_loss["forget"].append(loss_forget)
+                self.training_loss["qa"].append(loss_qa)
+                self.training_loss["explore"].append(loss_explore)
 
                 # linearly decay epsilon
                 self.epsilon = update_epsilon(
@@ -762,20 +981,20 @@ class DQNAgent(LongTermAgent):
                 )
                 self.epsilons.append(self.epsilon)
 
-                # if hard update is needed
+                # For QA (contextual bandit), we don't need target network updates
+                # since there's no temporal difference learning involved
                 if self.iteration_idx % self.target_update_interval == 0:
                     if self.separate_networks:
-                        if self.dqn_forget is not None:
-                            target_hard_update(
-                                dqn=self.dqn_forget, dqn_target=self.dqn_target_forget
-                            )
-                        if self.dqn_remember is not None:
-                            target_hard_update(
-                                dqn=self.dqn_remember,
-                                dqn_target=self.dqn_target_remember,
-                            )
+                        for policy_type in self.networks:
+                            if policy_type != "qa":  # Skip QA for target updates
+                                target_hard_update(
+                                    dqn=self.networks[policy_type],
+                                    dqn_target=self.target_networks[policy_type],
+                                )
                     else:
-                        target_hard_update(dqn=self.dqn, dqn_target=self.dqn_target)
+                        # Only update if target network exists (i.e., non-QA-only scenarios)
+                        if self.dqn_target is not None:
+                            target_hard_update(dqn=self.dqn, dqn_target=self.dqn_target)
 
                 # plotting & show training results
                 if (
@@ -825,6 +1044,10 @@ class DQNAgent(LongTermAgent):
                         q_remember,
                         a_forget,
                         q_forget,
+                        a_qa,
+                        q_qa,
+                        a_explore,
+                        q_explore,
                         reward,
                         answers,
                         done,
@@ -835,13 +1058,25 @@ class DQNAgent(LongTermAgent):
                     if idx == self.num_samples_for_results[val_or_test] - 1:
                         states_local.append(state)
                         q_values_local.append(
-                            {"forget": q_forget, "remember": q_remember}
+                            {
+                                "forget": q_forget,
+                                "remember": q_remember,
+                                "qa": q_qa,
+                                "explore": q_explore,
+                            }
                         )
                         actions_local.append(
-                            {"forget": a_forget, "remember": a_remember}
+                            {
+                                "forget": a_forget,
+                                "remember": a_remember,
+                                "qa": a_qa,
+                                "explore": a_explore,
+                            }
                         )
                         self.q_values[val_or_test]["forget"].append(q_forget)
                         self.q_values[val_or_test]["remember"].append(q_remember)
+                        self.q_values[val_or_test]["qa"].append(q_qa)
+                        self.q_values[val_or_test]["explore"].append(q_explore)
 
                 if done:
                     break
@@ -853,10 +1088,8 @@ class DQNAgent(LongTermAgent):
     def validate(self) -> None:
         r"""Validate the agent."""
         if self.separate_networks:
-            if self.dqn_forget is not None:
-                self.dqn_forget.eval()
-            if self.dqn_remember is not None:
-                self.dqn_remember.eval()
+            for network in self.networks.values():
+                network.eval()
         else:
             self.dqn.eval()
 
@@ -884,10 +1117,8 @@ class DQNAgent(LongTermAgent):
         self.env.close()
 
         if self.separate_networks:
-            if self.dqn_forget is not None:
-                self.dqn_forget.train()
-            if self.dqn_remember is not None:
-                self.dqn_remember.train()
+            for network in self.networks.values():
+                network.train()
         else:
             self.dqn.train()
 
@@ -897,12 +1128,10 @@ class DQNAgent(LongTermAgent):
         """Save validation checkpoints for separate networks."""
         mean_score = round(np.mean(scores_temp).item())
 
-        # Create checkpoint dictionary
+        # Create checkpoint dictionary for all separate networks
         checkpoint = {}
-        if self.dqn_forget is not None:
-            checkpoint["dqn_forget"] = self.dqn_forget.state_dict()
-        if self.dqn_remember is not None:
-            checkpoint["dqn_remember"] = self.dqn_remember.state_dict()
+        for policy_name, network in self.networks.items():
+            checkpoint[f"{policy_name}_network"] = network.state_dict()
 
         filename = os.path.join(
             self.default_root_dir, f"episode={num_episodes}_val-score={mean_score}.pt"
@@ -931,17 +1160,10 @@ class DQNAgent(LongTermAgent):
                 self.val_file_names.remove(fn)
 
     def test(self, checkpoint: str | None = None) -> None:
-        r"""Test the agent.
-
-        Args:
-            checkpoint: The checkpoint to override.
-
-        """
+        r"""Test the agent."""
         if self.separate_networks:
-            if self.dqn_forget is not None:
-                self.dqn_forget.eval()
-            if self.dqn_remember is not None:
-                self.dqn_remember.eval()
+            for network in self.networks.values():
+                network.eval()
         else:
             self.dqn.eval()
 
@@ -976,10 +1198,8 @@ class DQNAgent(LongTermAgent):
         self.env.close()
 
         if self.separate_networks:
-            if self.dqn_forget is not None:
-                self.dqn_forget.train()
-            if self.dqn_remember is not None:
-                self.dqn_remember.train()
+            for network in self.networks.values():
+                network.train()
         else:
             self.dqn.train()
 
@@ -993,11 +1213,26 @@ class DQNAgent(LongTermAgent):
             checkpoint_dict = torch.load(self.val_file_names[0])
 
         # Load state dicts for available networks
-        if self.dqn_forget is not None and "dqn_forget" in checkpoint_dict:
-            self.dqn_forget.load_state_dict(checkpoint_dict["dqn_forget"])
+        for policy_name, network in self.networks.items():
+            checkpoint_key = f"{policy_name}_network"
+            if checkpoint_key in checkpoint_dict:
+                network.load_state_dict(checkpoint_dict[checkpoint_key])
 
-        if self.dqn_remember is not None and "dqn_remember" in checkpoint_dict:
-            self.dqn_remember.load_state_dict(checkpoint_dict["dqn_remember"])
+    def _get_network_for_policy(self, policy_type: str) -> torch.nn.Module:
+        """Get the appropriate network for a given policy type.
+
+        Args:
+            policy_type: The policy type ("remember", "forget", "qa", "explore")
+
+        Returns:
+            The network to use for the given policy type
+        """
+        if self.separate_networks:
+            if policy_type not in self.networks:
+                raise ValueError(f"No network found for policy type: {policy_type}")
+            return self.networks[policy_type]
+        else:
+            return self.dqn
 
     def plot_results(self, to_plot: str = "all", save_fig: bool = False) -> None:
         r"""Plot things for DQN training.
@@ -1025,28 +1260,8 @@ class DQNAgent(LongTermAgent):
             self.default_root_dir,
             self.remember2str,
             self.forget2str,
+            self.qa2str,
+            self.explore2str,
             to_plot,
             save_fig,
         )
-
-    def get_model_param_count(self) -> dict:
-        """Get the parameter count for the model(s)."""
-        if self.separate_networks:
-            param_dict = {"total_params": 0}
-
-            if self.dqn_forget is not None:
-                forget_counts = self._count_network_parameters(self.dqn_forget)
-                param_dict.update({f"forget_{k}": v for k, v in forget_counts.items()})
-                param_dict["total_params"] += forget_counts["total"]
-
-            if self.dqn_remember is not None:
-                remember_counts = self._count_network_parameters(self.dqn_remember)
-                param_dict.update(
-                    {f"remember_{k}": v for k, v in remember_counts.items()}
-                )
-                param_dict["total_params"] += remember_counts["total"]
-        else:
-            param_dict = self._count_network_parameters(self.dqn)
-            param_dict["total_params"] = param_dict["total"]
-
-        return param_dict

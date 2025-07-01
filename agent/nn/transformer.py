@@ -359,15 +359,48 @@ class TransformerMemoryNet(nn.Module):
         device: str = "cpu",
         forget_needs_rl: bool = True,
         remember_needs_rl: bool = True,
+        qa_needs_rl: bool = False,
+        explore_needs_rl: bool = False,
         separate_network_type: str = None,
     ):
         super().__init__()
+        
+        # Validate separate_network_type
+        valid_separate_types = [None, "forget", "remember", "qa", "explore"]
+        if separate_network_type not in valid_separate_types:
+            raise ValueError(f"separate_network_type must be one of {valid_separate_types}, got {separate_network_type}")
+
         self.device = device
         self.embedding_dim = embedding_dim
         self.dim_feedforward = dim_feedforward
         self.forget_needs_rl = forget_needs_rl
         self.remember_needs_rl = remember_needs_rl
+        self.qa_needs_rl = qa_needs_rl
+        self.explore_needs_rl = explore_needs_rl
         self.separate_network_type = separate_network_type
+
+        # If this is a separate network, validate that only the corresponding policy needs RL
+        if self.separate_network_type is not None:
+            expected_rl_flags = {
+                "forget_needs_rl": separate_network_type == "forget",
+                "remember_needs_rl": separate_network_type == "remember", 
+                "qa_needs_rl": separate_network_type == "qa",
+                "explore_needs_rl": separate_network_type == "explore"
+            }
+            
+            actual_rl_flags = {
+                "forget_needs_rl": forget_needs_rl,
+                "remember_needs_rl": remember_needs_rl,
+                "qa_needs_rl": qa_needs_rl,
+                "explore_needs_rl": explore_needs_rl
+            }
+            
+            if actual_rl_flags != expected_rl_flags:
+                raise ValueError(
+                    f"For separate_network_type='{separate_network_type}', only "
+                    f"{separate_network_type}_needs_rl should be True. "
+                    f"Expected: {expected_rl_flags}, Got: {actual_rl_flags}"
+                )
 
         # Memory tokenizer
         self.tokenizer = MemoryTokenizer(
@@ -389,6 +422,7 @@ class TransformerMemoryNet(nn.Module):
 
         # Policy-specific components based on network type
         if separate_network_type == "forget":
+            # Only create forget-related components
             self.attention_aggregator_forget = AttentionAggregator(
                 embedding_dim=embedding_dim,
                 device=device,
@@ -401,6 +435,7 @@ class TransformerMemoryNet(nn.Module):
                 **mlp_params,
             )
         elif separate_network_type == "remember":
+            # Only create remember-related components
             self.mlp_remember = MLP(
                 n_actions=2,  # remember, forget
                 input_size=embedding_dim,
@@ -408,7 +443,33 @@ class TransformerMemoryNet(nn.Module):
                 device=device,
                 **mlp_params,
             )
-        else:
+        elif separate_network_type == "qa":
+            # Only create QA-related components
+            self.attention_aggregator_qa = AttentionAggregator(
+                embedding_dim=embedding_dim,
+                device=device,
+            )
+            self.mlp_qa = MLP(
+                n_actions=3,  # most_recently_added, most_recently_used, most_frequently_used
+                input_size=embedding_dim,
+                hidden_size=embedding_dim,
+                device=device,
+                **mlp_params,
+            )
+        elif separate_network_type == "explore":
+            # Only create explore-related components
+            self.attention_aggregator_explore = AttentionAggregator(
+                embedding_dim=embedding_dim,
+                device=device,
+            )
+            self.mlp_explore = MLP(
+                n_actions=2,  # dijkstra, bfs
+                input_size=embedding_dim,
+                hidden_size=embedding_dim,
+                device=device,
+                **mlp_params,
+            )
+        elif separate_network_type is None:
             # Shared network
             if forget_needs_rl:
                 self.attention_aggregator_forget = AttentionAggregator(
@@ -431,6 +492,37 @@ class TransformerMemoryNet(nn.Module):
                     device=device,
                     **mlp_params,
                 )
+
+            if qa_needs_rl:
+                self.attention_aggregator_qa = AttentionAggregator(
+                    embedding_dim=embedding_dim,
+                    device=device,
+                )
+                self.mlp_qa = MLP(
+                    n_actions=3,
+                    input_size=embedding_dim,
+                    hidden_size=embedding_dim,
+                    device=device,
+                    **mlp_params,
+                )
+
+            if explore_needs_rl:
+                self.attention_aggregator_explore = AttentionAggregator(
+                    embedding_dim=embedding_dim,
+                    device=device,
+                )
+                self.mlp_explore = MLP(
+                    n_actions=2,
+                    input_size=embedding_dim,
+                    hidden_size=embedding_dim,
+                    device=device,
+                    **mlp_params,
+                )
+        else:
+            raise ValueError(
+                f"Invalid separate_network_type: {separate_network_type}. "
+                "Must be one of 'forget', 'remember', 'qa', 'explore', or None."
+            )
 
         self.to(device)
 
@@ -471,25 +563,33 @@ class TransformerMemoryNet(nn.Module):
 
         Args:
             data: Batch of memory samples
-            policy_type: 'remember' or 'forget'
+            policy_type: 'remember', 'forget', 'qa', or 'explore'
 
         Returns:
             list of Q-value tensors for each sample in the batch
         """
         # Validate policy type
-        if self.separate_network_type == "forget" and policy_type != "forget":
+        valid_policies = ["remember", "forget", "qa", "explore"]
+        if policy_type not in valid_policies:
+            raise ValueError(f"policy_type must be one of {valid_policies}, got {policy_type}")
+
+        # For separate networks, ensure we're only being asked for the correct policy
+        if self.separate_network_type is not None and policy_type != self.separate_network_type:
             raise ValueError(
-                f"This network is configured for forget policy only, got {policy_type}"
-            )
-        if self.separate_network_type == "remember" and policy_type != "remember":
-            raise ValueError(
-                f"This network is configured for remember policy only, got {policy_type}"
+                f"This network is specialized for '{self.separate_network_type}' policy only, "
+                f"but was asked to compute '{policy_type}' policy"
             )
 
-        if policy_type == "remember" and not hasattr(self, "mlp_remember"):
-            raise ValueError("Remember policy components not available in this network")
-        if policy_type == "forget" and not hasattr(self, "mlp_forget"):
-            raise ValueError("Forget policy components not available in this network")
+        # For shared networks, ensure the requested policy components exist
+        if self.separate_network_type is None:
+            if policy_type == "remember" and not hasattr(self, "mlp_remember"):
+                raise ValueError("Remember policy components not available in this shared network")
+            if policy_type == "forget" and (not hasattr(self, "mlp_forget") or not hasattr(self, "attention_aggregator_forget")):
+                raise ValueError("Forget policy components (MLP and attention aggregator) not available in this shared network")
+            if policy_type == "qa" and (not hasattr(self, "mlp_qa") or not hasattr(self, "attention_aggregator_qa")):
+                raise ValueError("QA policy components (MLP and attention aggregator) not available in this shared network")
+            if policy_type == "explore" and (not hasattr(self, "mlp_explore") or not hasattr(self, "attention_aggregator_explore")):
+                raise ValueError("Explore policy components (MLP and attention aggregator) not available in this shared network")
 
         all_memories, batch_info = self._prepare_batch_data(data)
 
@@ -529,8 +629,12 @@ class TransformerMemoryNet(nn.Module):
             return self._handle_remember_policy(
                 encoded_tokens, batch_info, padding_mask
             )
-        else:
+        elif policy_type == "forget":
             return self._handle_forget_policy(encoded_tokens, padding_mask)
+        elif policy_type == "qa":
+            return self._handle_qa_policy(encoded_tokens, padding_mask)
+        elif policy_type == "explore":
+            return self._handle_explore_policy(encoded_tokens, padding_mask)
 
     def _handle_remember_policy(self, encoded_tokens, batch_info, padding_mask):
         """Handle remember policy Q-value computation."""
@@ -570,3 +674,35 @@ class TransformerMemoryNet(nn.Module):
 
         # Convert to list format for consistency
         return [q_forget[i : i + 1] for i in range(q_forget.size(0))]
+
+    def _handle_qa_policy(self, encoded_tokens, padding_mask):
+        """Handle QA policy Q-value computation."""
+        # Use attention aggregator to get single representation per sample
+        # Convert padding mask to attention mask (invert for our attention convention)
+        attention_mask = ~padding_mask  # True for valid positions, False for padded
+
+        aggregated_embeddings = self.attention_aggregator_qa(
+            encoded_tokens, attention_mask
+        )  # (batch_size, embedding_dim)
+
+        # Apply MLP for QA policy
+        q_qa = self.mlp_qa(aggregated_embeddings)  # (batch_size, 3)
+
+        # Convert to list format for consistency
+        return [q_qa[i : i + 1] for i in range(q_qa.size(0))]
+
+    def _handle_explore_policy(self, encoded_tokens, padding_mask):
+        """Handle explore policy Q-value computation."""
+        # Use attention aggregator to get single representation per sample
+        # Convert padding mask to attention mask (invert for our attention convention)
+        attention_mask = ~padding_mask  # True for valid positions, False for padded
+
+        aggregated_embeddings = self.attention_aggregator_explore(
+            encoded_tokens, attention_mask
+        )  # (batch_size, embedding_dim)
+
+        # Apply MLP for explore policy
+        q_explore = self.mlp_explore(aggregated_embeddings)  # (batch_size, 2)
+
+        # Convert to list format for consistency
+        return [q_explore[i : i + 1] for i in range(q_explore.size(0))]

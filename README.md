@@ -41,18 +41,48 @@ agent observations are represented as knowledge graphs.
 
 #### DQNAgent
 
-- Deep Q-Network agent that learns memory management and exploration policies
+- Deep Q-Network agent that learns optimal policies for four different decision types
 - Supports both shared and separate neural networks for different policies
 - Two function approximator architectures available:
   - **GNN-based**: Uses Graph Neural Networks (StarE convolution) to process memory graphs
   - **Transformer-based**: Uses transformer architecture to encode memory sequences
-- Learnable policies:
-  - Memory management (forget): `rl` - learns when to evict specific memories
-  - Memory management (remember): `rl` - learns what to remember from short-term memory
-  - Can be combined with symbolic policies (e.g., `lru` forget with `rl` remember)
-- Fixed policies inherited from symbolic agents:
-  - Question answering: `most_recently_added`
-  - Exploration: `dijkstra`
+- **Four Learnable Policies**:
+  - **Memory management (forget)**: `rl` - learns when to evict specific memories (3 actions: lru, lfu, fifo)
+  - **Memory management (remember)**: `rl` - learns what to remember from short-term memory (2 actions: remember, forget)
+  - **Question answering (qa)**: `rl` - **contextual bandit** that learns which QA strategy to use (3 actions: most_recently_added, most_recently_used, most_frequently_used)
+  - **Exploration (explore)**: `rl` - learns which exploration strategy to use (2 actions: dijkstra, bfs)
+- **Flexible Policy Combinations**: Can mix learned and symbolic policies (e.g., `rl` forget with symbolic `dijkstra` explore)
+- **Network Architecture Options**:
+  - **Shared Network**: Single backbone network with separate MLP heads for each policy
+  - **Separate Networks**: Dedicated networks for each learned policy
+- **Four Replay Buffers**: Independent experience replay for each policy type
+
+## Policy Details
+
+### Question Answering (QA) Policy
+
+The QA policy is implemented as a **contextual bandit** since QA actions don't affect the next state:
+- Takes one action per environment step to answer all questions in that step
+- Uses the current memory state (short + long term) as context
+- Learns to predict immediate reward for each QA strategy without considering future states
+- No temporal difference learning or target networks needed for this policy
+- Actions correspond to different QA strategies from the symbolic agent
+
+### Exploration Policy
+
+The exploration policy determines which exploration strategy to use:
+- Takes one action per environment step to determine movement direction
+- Uses the current memory state as input
+- Actions correspond to different exploration algorithms (dijkstra vs bfs)
+
+### Memory Management Policies
+
+- **Remember Policy**: Determines what to move from short-term to long-term memory
+  - Multiple actions per step (one per short-term memory)
+  - Uses independent Q-learning
+- **Forget Policy**: Determines which long-term memories to evict when capacity is exceeded
+  - One action per step when eviction is needed
+  - Uses attention-based aggregation of memory state
 
 ## Running Experiments
 
@@ -76,11 +106,10 @@ You can modify these scripts to adjust parameters such as:
 
 - Seeds for reproducibility
 - Room sizes
-- QA policies
-- Exploration policies
-- Memory management (remember and forget) policies
+- Policy combinations (which policies to learn vs use symbolic)
 - Memory capacities
 - Neural network architectures (GNN vs Transformer)
+- Network sharing (shared vs separate networks)
 - Training hyperparameters
 
 ## Symbolic Agent Results
@@ -125,8 +154,8 @@ The DQN agents support two different function approximator architectures:
 
 - Uses StarE (Star Graph Neural Network) convolution layers
 - Processes memory as a knowledge graph with entities, relations, and qualifiers
-- Attention-based aggregation for forget policy decisions
-- Per-memory Q-value computation for remember policy decisions
+- Attention-based aggregation for single-action policies (forget, qa, explore)
+- Per-memory Q-value computation for multi-action policies (remember)
 
 ### Transformer-based Architecture
 
@@ -135,7 +164,7 @@ The DQN agents support two different function approximator architectures:
 - Supports the same policy structures as GNN architecture
 - Attention-based processing of temporal memory sequences
 
-Both architectures can be configured with either shared networks (one network handles both policies) or separate networks (dedicated networks for remember and forget policies).
+Both architectures can be configured with either shared networks (one network handles all policies) or separate networks (dedicated networks for each learned policy).
 
 ## Implementation Approach
 
@@ -147,12 +176,16 @@ provides a transparent baseline for comparison.
 
 ### Neural Agents
 
-The DQN agents use reinforcement learning to optimize memory management policies while
-keeping question answering and exploration fixed to the best-performing symbolic policies.
-This allows for direct comparison of learned vs. hand-crafted memory management strategies.
+The DQN agents use reinforcement learning to optimize any combination of the four policy types while
+keeping non-learned policies fixed to symbolic implementations. This allows for systematic
+evaluation of which components benefit most from learning and enables flexible policy combinations.
 
-The neural agents support flexible combinations of learned and symbolic policies, enabling
-systematic evaluation of which components benefit most from learning.
+The neural agents support:
+- **Full RL**: All four policies learned (`qa="rl"`, `explore="rl"`, `forget="rl"`, `remember="rl"`)
+- **Partial RL**: Any subset of policies learned (e.g., `qa="rl"`, `explore="dijkstra"`, `forget="lru"`, `remember="all"`)
+- **Network Sharing**: Shared backbone with separate heads vs completely separate networks
+- **Independent Learning**: Each policy has its own replay buffer and can be learned independently
+- **Contextual Bandit QA**: QA policy uses contextual bandit learning (no temporal dependencies)
 
 ### Number of parameters by architecture type
 
@@ -160,21 +193,39 @@ The following tables show the number of parameters for different DQN agent confi
 
 **Vanilla GCN based**
 
-| Forget Policy | Remember Policy | Separate Networks | Embedding Dim | Num Layers | MLP Hidden Layers | Total Params |
-| ------------- | --------------- | ----------------- | ------------- | ---------- | ----------------- | ------------ |
-| RL            | RL              | True              | 32            | 2          | 1                 | 22471        |
-| RL            | RL              | True              | 64            | 4          | 1                 | 90247        |
+| Policies (RL) | Separate Networks | Embedding Dim | Num Layers | MLP Hidden Layers | Total Params |
+| ------------- | ----------------- | ------------- | ---------- | ----------------- | ------------ |
+| Forget + Remember | True | 32 | 2 | 1 | 22471 |
+| Forget + Remember | True | 64 | 4 | 1 | 90247 |
+| All Four | True | 32 | 2 | 1 | ~45000 |
+| All Four | False (Shared) | 32 | 2 | 1 | ~25000 |
 
 **StarE GCN based**
 
-| Forget Policy | Remember Policy | Separate Networks | Embedding Dim | Num Layers | MLP Hidden Layers | Total Params |
-| ------------- | --------------- | ----------------- | ------------- | ---------- | ----------------- | ------------ |
-| RL            | RL              | True              | 32            | 2          | 1                 | 39239        |
-| RL            | RL              | True              | 64            | 2          | 1                 | 139911       |
+| Policies (RL) | Separate Networks | Embedding Dim | Num Layers | MLP Hidden Layers | Total Params |
+| ------------- | ----------------- | ------------- | ---------- | ----------------- | ------------ |
+| Forget + Remember | True | 32 | 2 | 1 | 39239 |
+| Forget + Remember | True | 64 | 2 | 1 | 139911 |
+| All Four | True | 32 | 2 | 1 | ~78000 |
+| All Four | False (Shared) | 32 | 2 | 1 | ~42000 |
 
 **Transformer-based**
 
-| Forget Policy | Remember Policy | Separate Networks | Embedding Dim | Num Layers | Num Heads | MLP Hidden Layers | Total Params |
-| ------------- | --------------- | ----------------- | ------------- | ---------- | --------- | ----------------- | ------------ |
-| RL            | RL              | True              | 16            | 2          | 2         | 1                 | 22983        |
-| RL            | RL              | True              | 32            | 4          | 4         | 1                 | 133639       |
+| Policies (RL) | Separate Networks | Embedding Dim | Num Layers | Num Heads | MLP Hidden Layers | Total Params |
+| ------------- | ----------------- | ------------- | ---------- | --------- | ----------------- | ------------ |
+| Forget + Remember | True | 16 | 2 | 2 | 1 | 22983 |
+| Forget + Remember | True | 32 | 4 | 4 | 1 | 133639 |
+| All Four | True | 16 | 2 | 2 | 1 | ~46000 |
+| All Four | False (Shared) | 16 | 2 | 2 | 1 | ~26000 |
+
+## Policy Action Spaces
+
+- **Remember Policy**: 2 actions (remember, forget) - applied per short-term memory
+- **Forget Policy**: 3 actions (lru, lfu, fifo) - applied when memory capacity exceeded
+- **QA Policy**: 3 actions (most_recently_added, most_recently_used, most_frequently_used) - **contextual bandit** applied per environment step
+- **Explore Policy**: 2 actions (dijkstra, bfs) - applied per environment step
+
+The modular design allows researchers to study the relative importance of learning different
+decision-making components and their interactions in memory-augmented reinforcement learning.
+The QA policy's contextual bandit formulation makes it particularly suitable for studying
+immediate reward prediction without temporal dependencies.

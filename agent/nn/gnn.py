@@ -52,6 +52,8 @@ class GNN(torch.nn.Module):
         device: str = "cpu",
         forget_needs_rl: bool = True,
         remember_needs_rl: bool = True,
+        qa_needs_rl: bool = False,
+        explore_needs_rl: bool = False,
         separate_network_type: str = None,
         rotational_for_relation: bool = True,
     ) -> None:
@@ -68,7 +70,10 @@ class GNN(torch.nn.Module):
             device: The device to use. Default is "cpu".
             forget_needs_rl: Whether forget policy needs RL components
             remember_needs_rl: Whether remember policy needs RL components
-            separate_network_type: Type of separate network ("forget", "remember", or None for shared)
+            qa_needs_rl: Whether QA policy needs RL components
+            explore_needs_rl: Whether explore policy needs RL components
+            separate_network_type: If not None, this network is specialized for one policy only.
+                                  Valid values: "forget", "remember", "qa", "explore", or None for shared.
             rotational_for_relation: Whether to use rotational embeddings for relations
         """
         super(GNN, self).__init__()
@@ -77,6 +82,11 @@ class GNN(torch.nn.Module):
         valid_architectures = ["stare", "gcn", "transformer"]
         if architecture_type.lower() not in valid_architectures:
             raise ValueError(f"architecture_type must be one of {valid_architectures}, got {architecture_type}")
+
+        # Validate separate_network_type
+        valid_separate_types = [None, "forget", "remember", "qa", "explore"]
+        if separate_network_type not in valid_separate_types:
+            raise ValueError(f"separate_network_type must be one of {valid_separate_types}, got {separate_network_type}")
 
         self.entities = entities
         self.relations = relations
@@ -88,8 +98,33 @@ class GNN(torch.nn.Module):
         self.device = device
         self.forget_needs_rl = forget_needs_rl
         self.remember_needs_rl = remember_needs_rl
+        self.qa_needs_rl = qa_needs_rl
+        self.explore_needs_rl = explore_needs_rl
         self.separate_network_type = separate_network_type
         self.rotational_for_relation = rotational_for_relation
+
+        # If this is a separate network, validate that only the corresponding policy needs RL
+        if self.separate_network_type is not None:
+            expected_rl_flags = {
+                "forget_needs_rl": separate_network_type == "forget",
+                "remember_needs_rl": separate_network_type == "remember", 
+                "qa_needs_rl": separate_network_type == "qa",
+                "explore_needs_rl": separate_network_type == "explore"
+            }
+            
+            actual_rl_flags = {
+                "forget_needs_rl": forget_needs_rl,
+                "remember_needs_rl": remember_needs_rl,
+                "qa_needs_rl": qa_needs_rl,
+                "explore_needs_rl": explore_needs_rl
+            }
+            
+            if actual_rl_flags != expected_rl_flags:
+                raise ValueError(
+                    f"For separate_network_type='{separate_network_type}', only "
+                    f"{separate_network_type}_needs_rl should be True. "
+                    f"Expected: {expected_rl_flags}, Got: {actual_rl_flags}"
+                )
 
         # Get architecture-specific parameters
         if self.architecture_type == "stare":
@@ -119,6 +154,8 @@ class GNN(torch.nn.Module):
                 device=device,
                 forget_needs_rl=forget_needs_rl,
                 remember_needs_rl=remember_needs_rl,
+                qa_needs_rl=qa_needs_rl,
+                explore_needs_rl=explore_needs_rl,
                 separate_network_type=separate_network_type,
             )
             # Move to device
@@ -199,7 +236,7 @@ class GNN(torch.nn.Module):
         else:
             raise ValueError(f"{self.gcn_type} is not a valid GNN type.")
 
-        # Conditionally create policy-specific components
+        # Policy-specific components based on network type
         if separate_network_type == "forget":
             # Only create forget-related components
             self.attention_aggregator_forget = AttentionAggregator(
@@ -208,7 +245,7 @@ class GNN(torch.nn.Module):
             )
             self.mlp_forget = MLP(
                 n_actions=3,  # lru, lfu, fifo
-                input_size=self.embedding_dim,  # aggregated embedding
+                input_size=self.embedding_dim,
                 hidden_size=self.embedding_dim,
                 device=device,
                 **mlp_params,
@@ -222,7 +259,33 @@ class GNN(torch.nn.Module):
                 device=device,
                 **mlp_params,
             )
-        else:
+        elif separate_network_type == "qa":
+            # Only create QA-related components
+            self.attention_aggregator_qa = AttentionAggregator(
+                embedding_dim=self.embedding_dim,
+                device=device,
+            )
+            self.mlp_qa = MLP(
+                n_actions=3,  # most_recently_added, most_recently_used, most_frequently_used
+                input_size=self.embedding_dim,
+                hidden_size=self.embedding_dim,
+                device=device,
+                **mlp_params,
+            )
+        elif separate_network_type == "explore":
+            # Only create explore-related components
+            self.attention_aggregator_explore = AttentionAggregator(
+                embedding_dim=self.embedding_dim,
+                device=device,
+            )
+            self.mlp_explore = MLP(
+                n_actions=2,  # dijkstra, bfs
+                input_size=self.embedding_dim,
+                hidden_size=self.embedding_dim,
+                device=device,
+                **mlp_params,
+            )
+        elif separate_network_type is None:
             # Shared network: conditionally create components based on needs
             if forget_needs_rl:
                 self.attention_aggregator_forget = AttentionAggregator(
@@ -231,7 +294,7 @@ class GNN(torch.nn.Module):
                 )
                 self.mlp_forget = MLP(
                     n_actions=3,  # lru, lfu, fifo
-                    input_size=self.embedding_dim,  # aggregated embedding
+                    input_size=self.embedding_dim,
                     hidden_size=self.embedding_dim,
                     device=device,
                     **mlp_params,
@@ -245,6 +308,37 @@ class GNN(torch.nn.Module):
                     device=device,
                     **mlp_params,
                 )
+
+            if qa_needs_rl:
+                self.attention_aggregator_qa = AttentionAggregator(
+                    embedding_dim=self.embedding_dim,
+                    device=device,
+                )
+                self.mlp_qa = MLP(
+                    n_actions=3,  # most_recently_added, most_recently_used, most_frequently_used
+                    input_size=self.embedding_dim,
+                    hidden_size=self.embedding_dim,
+                    device=device,
+                    **mlp_params,
+                )
+
+            if explore_needs_rl:
+                self.attention_aggregator_explore = AttentionAggregator(
+                    embedding_dim=self.embedding_dim,
+                    device=device,
+                )
+                self.mlp_explore = MLP(
+                    n_actions=2,  # dijkstra, bfs
+                    input_size=self.embedding_dim,
+                    hidden_size=self.embedding_dim,
+                    device=device,
+                    **mlp_params,
+                )
+        else:
+            raise ValueError(
+                f"Invalid separate_network_type: {separate_network_type}. "
+                "Must be one of 'forget', 'remember', 'qa', 'explore', or None."
+            )
 
         # Move the entire model to the specified device
         self.to(self.device)
@@ -432,8 +526,8 @@ class GNN(torch.nn.Module):
                 has to have a batch dimension, even if it's a single sample. The shape
                 is [batch_size, num_quadruples, 4], where num_quadruples varies per
                 sample.
-            policy_type: The type of policy to compute Q-values for. Can be 'remember'
-                or 'forget'.
+            policy_type: The type of policy to compute Q-values for. Can be 'remember',
+                'forget', 'qa', or 'explore'.
 
         Returns:
             Q-values for different policies:
@@ -442,21 +536,28 @@ class GNN(torch.nn.Module):
         if self.architecture_type == "transformer":
             return self.transformer_model(data, policy_type)
 
-        # Continue with existing GNN forward pass
         # Validate policy type based on network configuration
-        if self.separate_network_type == "forget" and policy_type != "forget":
+        valid_policies = ["remember", "forget", "qa", "explore"]
+        if policy_type not in valid_policies:
+            raise ValueError(f"policy_type must be one of {valid_policies}, got {policy_type}")
+
+        # For separate networks, ensure we're only being asked for the correct policy
+        if self.separate_network_type is not None and policy_type != self.separate_network_type:
             raise ValueError(
-                f"This network is configured for forget policy only, got {policy_type}"
-            )
-        if self.separate_network_type == "remember" and policy_type != "remember":
-            raise ValueError(
-                f"This network is configured for remember policy only, got {policy_type}"
+                f"This network is specialized for '{self.separate_network_type}' policy only, "
+                f"but was asked to compute '{policy_type}' policy"
             )
 
-        if policy_type == "remember" and not hasattr(self, "mlp_remember"):
-            raise ValueError("Remember policy components not available in this network")
-        if policy_type == "forget" and not hasattr(self, "mlp_forget"):
-            raise ValueError("Forget policy components not available in this network")
+        # For shared networks, ensure the requested policy components exist
+        if self.separate_network_type is None:
+            if policy_type == "remember" and not hasattr(self, "mlp_remember"):
+                raise ValueError("Remember policy components not available in this shared network")
+            if policy_type == "forget" and (not hasattr(self, "mlp_forget") or not hasattr(self, "attention_aggregator_forget")):
+                raise ValueError("Forget policy components (MLP and attention aggregator) not available in this shared network")
+            if policy_type == "qa" and (not hasattr(self, "mlp_qa") or not hasattr(self, "attention_aggregator_qa")):
+                raise ValueError("QA policy components (MLP and attention aggregator) not available in this shared network")
+            if policy_type == "explore" and (not hasattr(self, "mlp_explore") or not hasattr(self, "attention_aggregator_explore")):
+                raise ValueError("Explore policy components (MLP and attention aggregator) not available in this shared network")
 
         (
             entity_embeddings,
@@ -560,7 +661,93 @@ class GNN(torch.nn.Module):
 
             return q_forget_batch
 
+        # Handle QA policy with attention aggregation
+        elif policy_type == "qa":
+            # Get the first half of entity embeddings (original, not duplicated)
+            entity_embeddings_first_half = entity_embeddings[
+                : entity_embeddings.size(0) // 2
+            ]
+
+            # Create padded batch for efficient processing
+            max_num_entities = max(num_entities_per_sample)
+            batch_size = len(num_entities_per_sample)
+
+            # Initialize padded tensor
+            padded_embeddings = torch.zeros(
+                batch_size, max_num_entities, self.embedding_dim, device=self.device
+            )
+
+            # Create attention mask
+            attention_mask = torch.zeros(
+                batch_size, max_num_entities, dtype=torch.bool, device=self.device
+            )
+
+            # Fill padded tensor and mask
+            start_idx = 0
+            for i, num_entities in enumerate(num_entities_per_sample):
+                padded_embeddings[i, :num_entities] = entity_embeddings_first_half[
+                    start_idx : start_idx + num_entities
+                ]
+                attention_mask[i, :num_entities] = True
+                start_idx += num_entities
+
+            # Single batched attention aggregation
+            aggregated_embeddings = self.attention_aggregator_qa(
+                padded_embeddings, attention_mask
+            )  # (batch_size, embedding_dim)
+
+            # Single batched MLP forward pass
+            q_qa = self.mlp_qa(aggregated_embeddings)  # (batch_size, n_actions)
+
+            # Convert back to list format for consistency
+            q_qa_batch = [q_qa[i : i + 1] for i in range(batch_size)]
+
+            return q_qa_batch
+
+        # Handle explore policy with attention aggregation
+        elif policy_type == "explore":
+            # Get the first half of entity embeddings (original, not duplicated)
+            entity_embeddings_first_half = entity_embeddings[
+                : entity_embeddings.size(0) // 2
+            ]
+
+            # Create padded batch for efficient processing
+            max_num_entities = max(num_entities_per_sample)
+            batch_size = len(num_entities_per_sample)
+
+            # Initialize padded tensor
+            padded_embeddings = torch.zeros(
+                batch_size, max_num_entities, self.embedding_dim, device=self.device
+            )
+
+            # Create attention mask
+            attention_mask = torch.zeros(
+                batch_size, max_num_entities, dtype=torch.bool, device=self.device
+            )
+
+            # Fill padded tensor and mask
+            start_idx = 0
+            for i, num_entities in enumerate(num_entities_per_sample):
+                padded_embeddings[i, :num_entities] = entity_embeddings_first_half[
+                    start_idx : start_idx + num_entities
+                ]
+                attention_mask[i, :num_entities] = True
+                start_idx += num_entities
+
+            # Single batched attention aggregation
+            aggregated_embeddings = self.attention_aggregator_explore(
+                padded_embeddings, attention_mask
+            )  # (batch_size, embedding_dim)
+
+            # Single batched MLP forward pass
+            q_explore = self.mlp_explore(aggregated_embeddings)  # (batch_size, n_actions)
+
+            # Convert back to list format for consistency
+            q_explore_batch = [q_explore[i : i + 1] for i in range(batch_size)]
+
+            return q_explore_batch
+
         else:
             raise ValueError(
-                f"{policy_type} is not a valid policy type. Use 'remember' or 'forget'."
+                f"{policy_type} is not a valid policy type. Use 'remember', 'forget', 'qa', or 'explore'."
             )

@@ -65,6 +65,8 @@ def run_dqn_experiment(params):
         max_memory,
         forget_policy,
         remember_policy,
+        qa_policy,
+        explore_policy,
         separate_networks,
         embedding_dim,
         num_layers,
@@ -75,17 +77,18 @@ def run_dqn_experiment(params):
 
     batch_size = 2
     terminates_at = 9
-    num_total_questions = 20
-    num_episodes = 3  # should be between 100 and 500
+    num_total_questions = 10
+    num_episodes = 1  # should be between 100 and 500
     num_iterations = (terminates_at + 1) * num_episodes
     # num_target_syncs = 400
-    target_update_interval = 3
+    target_update_interval = 5
     epsilon_decay_until = num_iterations // 2  # 50% of iterations
-    warm_start = 4
+    warm_start = num_iterations // 5  # 20 percent of the iterations
 
     print(
         f"Test seed: {test_seed}, Train seed: {train_seed}, Architecture: {architecture_type}, "
         f"Max memory: {max_memory}, Forget: {forget_policy}, Remember: {remember_policy}, "
+        f"QA: {qa_policy}, Explore: {explore_policy}, "
         f"Separate networks: {separate_networks}, Embedding dim: {embedding_dim}, "
         f"Num layers: {num_layers}, Num heads: {num_heads}, MLP hidden layers: {mlp_hidden_layers}"
     )
@@ -131,12 +134,12 @@ def run_dqn_experiment(params):
             "include_walls_in_observations": True,
             "deterministic_objects": False,
         },
-        qa_policy="most_recently_added",
-        explore_policy="dijkstra",
+        qa_policy=qa_policy,
+        explore_policy=explore_policy,
         forget_policy=forget_policy,
         remember_policy=remember_policy,
         max_long_term_memory_size=max_memory,
-        num_samples_for_results={"val": 3, "test": 3},
+        num_samples_for_results={"val": 5, "test": 5},
         save_results=True,
         default_root_dir="training-results-foo",
         num_iterations=num_iterations,
@@ -154,7 +157,7 @@ def run_dqn_experiment(params):
         gcn_params=gcn_params,
         transformer_params=transformer_params,
         mlp_params=mlp_params,
-        validation_interval=2,
+        validation_interval=1,
         plotting_interval=5,
         train_seed=train_seed,
         test_seed=test_seed,
@@ -170,21 +173,28 @@ def run_dqn_experiment(params):
 
 
 if __name__ == "__main__":
-    test_seeds = [0, 1, 2, 3, 4]
+    test_seeds = [0]
     architecture_types = [
         "stare",
         "gcn",
         "transformer",
     ]
-    max_memories = [16]
+    max_memories = [4]
     policy_combinations = [
-        ("lru", "rl"),
-        ("rl", "all"),
-        ("rl", "rl", "separate"),
-        ("rl", "rl", "non_separate"),
+        # (forget, remember, qa, explore, separate_networks)
+        ("lru", "all", "most_recently_used", "bfs", False),
+        # ("lfu", "all", "most_frequently_used", "bfs", False),
+        # ("lfu", "all", "most_frequently_used", "bfs", False),
+        # ("rl", "all", "most_recently_used", "bfs", False),
+        # ("rl", "rl", "most_frequently_used", "dijkstra", True),
+        # ("rl", "rl", "most_recently_added", "bfs", False),
+        # ("rl", "rl", "rl", "dijkstra", True),
+        # ("rl", "rl", "rl", "rl", True),
+        # ("rl", "rl", "rl", "rl", False),
+        # ("fifo", "rl", "rl", "rl", False),
     ]
 
-    network_sizes = ["small", "big"]
+    network_sizes = ["small"]
 
     all_combinations = []
 
@@ -195,12 +205,13 @@ if __name__ == "__main__":
                     for network_size in network_sizes:
                         config = network_configs[arch_type][network_size]
 
-                        if len(policy_combo) == 3:
-                            forget_policy, remember_policy, network_type = policy_combo
-                            separate_networks = network_type == "separate"
-                        else:
-                            forget_policy, remember_policy = policy_combo
-                            separate_networks = False
+                        (
+                            forget_policy,
+                            remember_policy,
+                            qa_policy,
+                            explore_policy,
+                            separate_networks,
+                        ) = policy_combo
 
                         all_combinations.append(
                             (
@@ -209,6 +220,8 @@ if __name__ == "__main__":
                                 memory,
                                 forget_policy,
                                 remember_policy,
+                                qa_policy,
+                                explore_policy,
                                 separate_networks,
                                 config["embedding_dim"],
                                 config["num_layers"],
@@ -221,7 +234,7 @@ if __name__ == "__main__":
 
     print(f"Total combinations to run: {len(all_combinations)}")
 
-    num_processes = 2
+    num_processes = 4
     print(f"Running experiments with {num_processes} processes")
 
     with multiprocessing.Pool(num_processes) as pool:

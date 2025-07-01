@@ -217,6 +217,480 @@ class ReplayBuffer:
         return self.size
 
 
+def compute_loss_remember(
+    batch: dict,
+    device: str,
+    dqn: torch.nn.Module,
+    dqn_target: torch.nn.Module,
+    ddqn: bool,
+    gamma: float,
+) -> torch.Tensor:
+    r"""Return the DQN td loss for the short-term memory management policy (remember).
+
+    G_t   = r + gamma * v(s_{t+1})  if state != Terminal
+          = r                       otherwise
+
+    Args:
+        batch: A dictionary of samples from the replay buffer.
+            state: np.ndarray,
+            action: np.ndarray,
+            reward: float,
+            next_state: np.ndarray,
+            done: bool,
+        device: cpu or cuda
+        dqn: dqn model
+        dqn_target: dqn target model
+        ddqn: whether to use double dqn or not
+        gamma: discount factor
+
+    Returns:
+        loss: TD loss for short-term memory management (remember policy)
+
+    """
+    state = batch["state"]
+    state_next = batch["next_state"]
+    action = [
+        torch.LongTensor(np.array([num.item() for num in a])).reshape(-1, 1).to(device)
+        for a in batch["action"]
+    ]
+    reward = torch.FloatTensor(batch["reward"]).to(device)
+    done = torch.FloatTensor(batch["done"]).to(device)
+
+    # Forward pass on current state to get Q-values
+    q_value_current = dqn(state, policy_type="remember")
+
+    # Forward pass on next state to get Q-values
+    q_value_next = dqn_target(state_next, policy_type="remember")
+
+    if ddqn:
+        q_value_for_action = dqn(state_next, policy_type="remember")
+
+    q_value_current_batch = []
+    q_value_target_batch = []
+
+    # note that the observations are assumed to be randomized.
+    min_lens = [min(len(i), len(j)) for i, j in zip(q_value_current, q_value_next)]
+
+    for idx in range(len(min_lens)):
+        min_len = min_lens[idx]
+
+        action_ = action[idx][:min_len]
+        q_value_current_ = q_value_current[idx][:min_len]
+        q_value_current_chosen = q_value_current_.gather(1, action_)
+        q_value_next_ = q_value_next[idx][:min_len]
+
+        if ddqn:
+            # Double DQN: Use current DQN to select actions, target DQN to evaluate
+            # those actions
+            q_value_for_action_ = q_value_for_action[idx][:min_len]
+            action_next = q_value_for_action_.argmax(dim=1, keepdim=True)
+            q_value_next_chosen = q_value_next_.gather(1, action_next).detach()
+        else:
+            # Vanilla DQN: Use target DQN to get max Q-value for next state
+            q_value_next_chosen = q_value_next_.max(dim=1, keepdim=True)[0].detach()
+
+        # Compute the target Q-values considering whether the state is terminal
+        q_value_target_ = reward[idx] + gamma * q_value_next_chosen * (1 - done[idx])
+
+        q_value_current_batch.append(q_value_current_chosen)
+        q_value_target_batch.append(q_value_target_)
+
+    q_value_current_batch = torch.concat(q_value_current_batch, dim=0)
+    q_value_target_batch = torch.concat(q_value_target_batch, dim=0)
+
+    assert q_value_current_batch.shape == q_value_target_batch.shape
+
+    # Calculate loss
+    loss = F.smooth_l1_loss(q_value_current_batch, q_value_target_batch)
+
+    return loss
+
+
+def compute_loss_forget(
+    batch: dict,
+    device: str,
+    dqn: torch.nn.Module,
+    dqn_target: torch.nn.Module,
+    ddqn: bool,
+    gamma: float,
+) -> torch.Tensor:
+    r"""Return the DQN td loss for forget policy.
+
+    G_t   = r + gamma * v(s_{t+1})  if state != Terminal
+          = r                       otherwise
+
+    Args:
+        batch: A dictionary of samples from the replay buffer.
+            state: np.ndarray,
+            action: np.ndarray,
+            reward: float,
+            next_state: np.ndarray,
+            done: bool,
+        device: cpu or cuda
+        dqn: dqn model
+        dqn_target: dqn target model
+        ddqn: whether to use double dqn or not
+        gamma: discount factor
+
+    Returns:
+        loss: TD loss for the long-term memory management (forget policy)
+
+    """
+
+    state = batch["state"]
+    state_next = batch["next_state"]
+    action = torch.LongTensor(
+        np.array([num.item() for num in batch["action"]]).reshape(-1, 1)
+    ).to(device)
+    reward = torch.FloatTensor(batch["reward"]).reshape(-1, 1).to(device)
+    done = torch.FloatTensor(batch["done"]).reshape(-1, 1).to(device)
+
+    # Forward pass on current state to get Q-values
+    q_value_current = dqn(state, policy_type="forget")
+
+    q_value_current = torch.concat(q_value_current)
+    q_value_current = q_value_current.gather(1, action)
+
+    q_value_next = dqn_target(state_next, policy_type="forget")
+    q_value_next = torch.concat(q_value_next)
+
+    if ddqn:
+        # Double DQN: Use current DQN to select actions, target DQN to evaluate those
+        # actions
+        q_value_for_action = dqn(state_next, policy_type="forget")
+        q_value_for_action = torch.concat(q_value_for_action)
+        action_next = q_value_for_action.argmax(dim=1, keepdim=True)
+        q_value_next = q_value_next.gather(1, action_next).detach()
+    else:
+        # Vanilla DQN: Use target DQN to get max Q-value for next state
+        q_value_next = q_value_next.max(dim=1, keepdim=True)[0].detach()
+
+    # Compute the target Q-values considering whether the state is terminal
+    q_value_target = reward + gamma * q_value_next * (1 - done)
+
+    assert q_value_current.shape == q_value_target.shape
+
+    # Calculate loss
+    loss = F.smooth_l1_loss(q_value_current, q_value_target)
+
+    return loss
+
+
+def compute_loss_qa(
+    batch: dict,
+    device: str,
+    dqn: torch.nn.Module,
+    dqn_target: torch.nn.Module,  # Not used for QA, kept for interface consistency
+    ddqn: bool,  # Not used for QA, kept for interface consistency
+    gamma: float,  # Not used for QA, kept for interface consistency
+) -> torch.Tensor:
+    r"""Return the loss for QA policy (contextual bandit).
+
+    Since QA is a contextual bandit problem (action doesn't affect next state),
+    we only need to predict the immediate reward given the current state and action.
+    No need for next state, target network, or done considerations.
+
+    Args:
+        batch: A dictionary of samples from the replay buffer.
+            state: np.ndarray,
+            action: np.ndarray,
+            reward: float,
+            next_state: np.ndarray (not used for QA),
+            done: bool (not used for QA),
+        device: cpu or cuda
+        dqn: dqn model
+        dqn_target: dqn target model (not used for contextual bandit)
+        ddqn: whether to use double dqn (not used for contextual bandit)
+        gamma: discount factor (not used for contextual bandit)
+
+    Returns:
+        loss: Loss for the QA policy (contextual bandit)
+
+    """
+
+    state = batch["state"]
+    action = torch.LongTensor(
+        np.array([num.item() for num in batch["action"]]).reshape(-1, 1)
+    ).to(device)
+    reward = torch.FloatTensor(batch["reward"]).reshape(-1, 1).to(device)
+
+    # Forward pass on current state to get Q-values
+    q_value_current = dqn(state, policy_type="qa")
+    q_value_current = torch.concat(q_value_current)
+    q_value_current = q_value_current.gather(1, action)
+
+    # For contextual bandit, target is simply the immediate reward
+    # No next state, target network, or discount factor needed
+    q_value_target = reward
+
+    assert q_value_current.shape == q_value_target.shape
+
+    # Calculate loss
+    loss = F.smooth_l1_loss(q_value_current, q_value_target)
+
+    return loss
+
+
+def compute_loss_explore(
+    batch: dict,
+    device: str,
+    dqn: torch.nn.Module,
+    dqn_target: torch.nn.Module,
+    ddqn: bool,
+    gamma: float,
+) -> torch.Tensor:
+    r"""Return the DQN td loss for explore policy.
+
+    Args:
+        batch: A dictionary of samples from the replay buffer.
+        device: cpu or cuda
+        dqn: dqn model
+        dqn_target: dqn target model
+        ddqn: whether to use double dqn or not
+        gamma: discount factor
+
+    Returns:
+        loss: TD loss for the explore policy
+
+    """
+
+    state = batch["state"]
+    state_next = batch["next_state"]
+    action = torch.LongTensor(
+        np.array([num.item() for num in batch["action"]]).reshape(-1, 1)
+    ).to(device)
+    reward = torch.FloatTensor(batch["reward"]).reshape(-1, 1).to(device)
+    done = torch.FloatTensor(batch["done"]).reshape(-1, 1).to(device)
+
+    # Forward pass on current state to get Q-values
+    q_value_current = dqn(state, policy_type="explore")
+
+    q_value_current = torch.concat(q_value_current)
+    q_value_current = q_value_current.gather(1, action)
+
+    q_value_next = dqn_target(state_next, policy_type="explore")
+    q_value_next = torch.concat(q_value_next)
+
+    if ddqn:
+        # Double DQN: Use current DQN to select actions, target DQN to evaluate those
+        # actions
+        q_value_for_action = dqn(state_next, policy_type="explore")
+        q_value_for_action = torch.concat(q_value_for_action)
+        action_next = q_value_for_action.argmax(dim=1, keepdim=True)
+        q_value_next = q_value_next.gather(1, action_next).detach()
+    else:
+        # Vanilla DQN: Use target DQN to get max Q-value for next state
+        q_value_next = q_value_next.max(dim=1, keepdim=True)[0].detach()
+
+    # Compute the target Q-values considering whether the state is terminal
+    q_value_target = reward + gamma * q_value_next * (1 - done)
+
+    assert q_value_current.shape == q_value_target.shape
+
+    # Calculate loss
+    loss = F.smooth_l1_loss(q_value_current, q_value_target)
+
+    return loss
+
+
+def update_model(
+    forget_policy: str,
+    remember_policy: str,
+    qa_policy: str,
+    explore_policy: str,
+    replay_buffer_remember: ReplayBuffer,
+    replay_buffer_forget: ReplayBuffer,
+    replay_buffer_qa: ReplayBuffer,
+    replay_buffer_explore: ReplayBuffer,
+    device: str,
+    ddqn: bool,
+    gamma: float,
+    use_gradient_clipping: bool = True,
+    gradient_clip_value: float = 1.0,
+    separate_networks: bool = False,
+    # Shared network parameters
+    optimizer: torch.optim.Optimizer = None,
+    dqn: torch.nn.Module = None,
+    dqn_target: torch.nn.Module = None,
+    # Separate network parameters
+    optimizers: dict = None,
+    networks: dict = None,
+    target_networks: dict = None,
+) -> tuple[float, float, float, float, float]:
+    r"""Update the model by gradient descent.
+
+    Args:
+        forget_policy: Forget policy type
+        remember_policy: Remember policy type
+        qa_policy: QA policy type
+        explore_policy: Explore policy type
+        replay_buffer_remember: replay buffer for remember policy
+        replay_buffer_forget: replay buffer for forget policy
+        replay_buffer_qa: replay buffer for QA policy
+        replay_buffer_explore: replay buffer for explore policy
+        device: cpu or cuda
+        ddqn: whether to use double dqn or not
+        gamma: discount factor
+        use_gradient_clipping: Whether to use gradient clipping.
+        gradient_clip_value: The maximum norm for gradient clipping.
+        separate_networks: Whether using separate networks for policies
+        optimizer: optimizer for shared network
+        dqn: shared dqn model
+        dqn_target: shared dqn target model
+        optimizers: optimizers for separate networks
+        networks: separate dqn models
+        target_networks: separate dqn target models
+
+    Returns:
+        loss_remember, loss_forget, loss_qa, loss_explore, loss_combined
+    """
+    loss_remember = torch.tensor(0.0, device=device)
+    loss_forget = torch.tensor(0.0, device=device)
+    loss_qa = torch.tensor(0.0, device=device)
+    loss_explore = torch.tensor(0.0, device=device)
+
+    if remember_policy == "rl":
+        batch_remember = replay_buffer_remember.sample_batch()
+        batch_remember = {
+            "state": batch_remember["state"],
+            "action": batch_remember["action"],
+            "reward": batch_remember["reward"],
+            "next_state": batch_remember["next_state"],
+            "done": batch_remember["done"],
+        }
+
+        if separate_networks:
+            loss_remember = compute_loss_remember(
+                batch_remember,
+                device,
+                networks["remember"],
+                target_networks["remember"],
+                ddqn,
+                gamma,
+            )
+            optimizers["remember"].zero_grad()
+            loss_remember.backward()
+            if use_gradient_clipping:
+                torch.nn.utils.clip_grad_norm_(
+                    networks["remember"].parameters(), gradient_clip_value
+                )
+            optimizers["remember"].step()
+        else:
+            loss_remember = compute_loss_remember(
+                batch_remember, device, dqn, dqn_target, ddqn, gamma
+            )
+
+    if forget_policy == "rl":
+        batch_forget = replay_buffer_forget.sample_batch()
+        batch_forget = {
+            "state": batch_forget["state"],
+            "action": batch_forget["action"],
+            "reward": batch_forget["reward"],
+            "next_state": batch_forget["next_state"],
+            "done": batch_forget["done"],
+        }
+
+        if separate_networks:
+            loss_forget = compute_loss_forget(
+                batch_forget,
+                device,
+                networks["forget"],
+                target_networks["forget"],
+                ddqn,
+                gamma,
+            )
+            optimizers["forget"].zero_grad()
+            loss_forget.backward()
+            if use_gradient_clipping:
+                torch.nn.utils.clip_grad_norm_(
+                    networks["forget"].parameters(), gradient_clip_value
+                )
+            optimizers["forget"].step()
+        else:
+            loss_forget = compute_loss_forget(
+                batch_forget, device, dqn, dqn_target, ddqn, gamma
+            )
+
+    if qa_policy == "rl":
+        batch_qa = replay_buffer_qa.sample_batch()
+        batch_qa = {
+            "state": batch_qa["state"],
+            "action": batch_qa["action"],
+            "reward": batch_qa["reward"],
+            "next_state": batch_qa["next_state"],
+            "done": batch_qa["done"],
+        }
+
+        if separate_networks:
+            # QA doesn't use target network (contextual bandit)
+            loss_qa = compute_loss_qa(
+                batch_qa, device, networks["qa"], None, ddqn, gamma
+            )
+            optimizers["qa"].zero_grad()
+            loss_qa.backward()
+            if use_gradient_clipping:
+                torch.nn.utils.clip_grad_norm_(
+                    networks["qa"].parameters(), gradient_clip_value
+                )
+            optimizers["qa"].step()
+        else:
+            # For shared networks, QA still doesn't use target network
+            loss_qa = compute_loss_qa(batch_qa, device, dqn, None, ddqn, gamma)
+
+    if explore_policy == "rl":
+        batch_explore = replay_buffer_explore.sample_batch()
+        batch_explore = {
+            "state": batch_explore["state"],
+            "action": batch_explore["action"],
+            "reward": batch_explore["reward"],
+            "next_state": batch_explore["next_state"],
+            "done": batch_explore["done"],
+        }
+
+        if separate_networks:
+            loss_explore = compute_loss_explore(
+                batch_explore,
+                device,
+                networks["explore"],
+                target_networks["explore"],
+                ddqn,
+                gamma,
+            )
+            optimizers["explore"].zero_grad()
+            loss_explore.backward()
+            if use_gradient_clipping:
+                torch.nn.utils.clip_grad_norm_(
+                    networks["explore"].parameters(), gradient_clip_value
+                )
+            optimizers["explore"].step()
+        else:
+            loss_explore = compute_loss_explore(
+                batch_explore, device, dqn, dqn_target, ddqn, gamma
+            )
+
+    # For shared networks, update once with combined loss
+    if not separate_networks and any(
+        policy == "rl"
+        for policy in [remember_policy, forget_policy, qa_policy, explore_policy]
+    ):
+        loss = loss_remember + loss_forget + loss_qa + loss_explore
+        optimizer.zero_grad()
+        loss.backward()
+        if use_gradient_clipping:
+            torch.nn.utils.clip_grad_norm_(dqn.parameters(), gradient_clip_value)
+        optimizer.step()
+    else:
+        loss = loss_remember + loss_forget + loss_qa + loss_explore
+
+    loss_remember = loss_remember.detach().cpu().numpy().item()
+    loss_forget = loss_forget.detach().cpu().numpy().item()
+    loss_qa = loss_qa.detach().cpu().numpy().item()
+    loss_explore = loss_explore.detach().cpu().numpy().item()
+    loss = loss.detach().cpu().numpy().item()
+
+    return loss_remember, loss_forget, loss_qa, loss_explore, loss
+
+
 def plot_results(
     scores: dict[str, list[float]],
     training_loss: dict[str, list[float]],
@@ -228,6 +702,8 @@ def plot_results(
     default_root_dir: str,
     remember2str,
     forget2str,
+    qa2str,
+    explore2str,
     to_plot: str = "all",
     save_fig: bool = False,
 ) -> None:
@@ -235,7 +711,7 @@ def plot_results(
 
     Args:
         scores: a dictionary of scores for train, validation, and test.
-        training_loss: a dict of training losses for all, remember, and forget.
+        training_loss: a dict of training losses for all, remember, forget, qa, and explore.
         epsilons: a list of epsilons.
         q_values: a dictionary of q_values for train, validation, and test.
         iteration_idx: the current iteration index.
@@ -244,6 +720,8 @@ def plot_results(
         default_root_dir: the root directory where the results are saved.
         remember2str: a dictionary to convert remember actions to strings.
         forget2str: a dictionary to convert forget actions to strings.
+        qa2str: a dictionary to convert QA actions to strings.
+        explore2str: a dictionary to convert explore actions to strings.
         to_plot: what to plot:
             "all": plot everything
             "training_td_loss": plot training td loss
@@ -261,55 +739,48 @@ def plot_results(
         clear_output(True)
 
     if to_plot == "all":
-        plt.figure(figsize=(20, 20))
+        plt.figure(figsize=(20, 35))
 
-        plt.subplot(333)
+        # Top row: training loss, epsilon, train/val/test score
+        plt.subplot(5, 3, 1)
+        plt.title("Training TD Loss (log scale)")
+        plt.plot(training_loss["total"], label="total")
+        plt.plot(training_loss["remember"], label="remember")
+        plt.plot(training_loss["forget"], label="forget")
+        plt.plot(training_loss["qa"], label="qa")
+        plt.plot(training_loss["explore"], label="explore")
+        plt.yscale("log")
+        plt.xlabel("update counts")
+        plt.legend(loc="best")
+
+        plt.subplot(5, 3, 2)
+        plt.title("Epsilons")
+        plt.plot(epsilons)
+        plt.xlabel("update counts")
+
+        plt.subplot(5, 3, 3)
         if scores["train"]:
-            plt.title(
-                f"iteration {iteration_idx} out of {num_iterations}. "
-                f"training score: {scores['train'][-1]} out of "
-                f"{total_maximum_episode_rewards}"
-            )
             plt.plot(scores["train"], label="Training score")
-            plt.xlabel("episode")
-
         if scores["val"]:
             val_means = [round(np.mean(scores).item()) for scores in scores["val"]]
-            plt.title(
-                f"validation score: {val_means[-1]} out of "
-                f"{total_maximum_episode_rewards}"
-            )
             plt.plot(val_means, label="Validation score")
-            plt.xlabel("episode")
-
         if scores["test"]:
-            plt.title(
-                f"test score: {np.mean(scores['test'])} out of "
-                f"{total_maximum_episode_rewards}"
-            )
             plt.plot(
                 [round(np.mean(scores["test"]).item(), 2)] * len(scores["train"]),
                 label="Test score",
             )
-            plt.xlabel("episode")
+        plt.title(
+            f"iteration {iteration_idx}/{num_iterations}\n"
+            f"Train: {scores['train'][-1] if scores['train'] else '-'} | "
+            f"Val: {val_means[-1] if scores['val'] else '-'} | "
+            f"Test: {np.mean(scores['test']) if scores['test'] else '-'}"
+        )
+        plt.xlabel("episode")
         plt.legend(loc="best")
 
-        plt.subplot(331)
-        plt.title("training td loss (log scale)")
-        plt.plot(training_loss["total"], label="total")
-        plt.plot(training_loss["remember"], label="remember")
-        plt.plot(training_loss["forget"], label="forget")
-        plt.yscale("log")  # Set y-axis to log scale
-        plt.xlabel("update counts")
-        plt.legend(loc="best")
-
-        plt.subplot(332)
-        plt.title("epsilons")
-        plt.plot(epsilons)
-        plt.xlabel("update counts")
-
-        for subplot_num, split in zip([334, 335, 336], ["train", "val", "test"]):
-            plt.subplot(subplot_num)
+        # Second row: Q-values (remember)
+        for i, split in enumerate(["train", "val", "test"]):
+            plt.subplot(5, 3, 4 + i)
             plt.title(f"Q-values (remember), {split}")
             for action_number in range(len(remember2str)):
                 plt.plot(
@@ -320,11 +791,12 @@ def plot_results(
                     ],
                     label=remember2str[action_number],
                 )
-            plt.legend(loc="best")
             plt.xlabel("number of actions")
+            plt.legend(loc="best")
 
-        for subplot_num, split in zip([337, 338, 339], ["train", "val", "test"]):
-            plt.subplot(subplot_num)
+        # Third row: Q-values (forget)
+        for i, split in enumerate(["train", "val", "test"]):
+            plt.subplot(5, 3, 7 + i)
             plt.title(f"Q-values (forget), {split}")
             for action_number in range(len(forget2str)):
                 plt.plot(
@@ -334,8 +806,35 @@ def plot_results(
                     ],
                     label=forget2str[action_number],
                 )
-            plt.legend(loc="best")
             plt.xlabel("number of actions")
+            plt.legend(loc="best")
+
+        # Fourth row: Q-values (qa)
+        for i, split in enumerate(["train", "val", "test"]):
+            plt.subplot(5, 3, 10 + i)
+            plt.title(f"Q-values (qa), {split}")
+            for action_number in range(len(qa2str)):
+                plt.plot(
+                    [q_value_[0][action_number] for q_value_ in q_values[split]["qa"]],
+                    label=qa2str[action_number],
+                )
+            plt.xlabel("number of actions")
+            plt.legend(loc="best")
+
+        # Fifth row: Q-values (explore)
+        for i, split in enumerate(["train", "val", "test"]):
+            plt.subplot(5, 3, 13 + i)
+            plt.title(f"Q-values (explore), {split}")
+            for action_number in range(len(explore2str)):
+                plt.plot(
+                    [
+                        q_value_[0][action_number]
+                        for q_value_ in q_values[split]["explore"]
+                    ],
+                    label=explore2str[action_number],
+                )
+            plt.xlabel("number of actions")
+            plt.legend(loc="best")
 
         plt.subplots_adjust(hspace=0.5)
         if save_fig:
@@ -520,283 +1019,6 @@ def save_final_results(
         write_pickle(self, os.path.join(default_root_dir, "agent.pkl"))
 
 
-def compute_loss_remember(
-    batch: dict,
-    device: str,
-    dqn: torch.nn.Module,
-    dqn_target: torch.nn.Module,
-    ddqn: bool,
-    gamma: float,
-) -> torch.Tensor:
-    r"""Return the DQN td loss for the short-term memory management policy (remember).
-
-    G_t   = r + gamma * v(s_{t+1})  if state != Terminal
-          = r                       otherwise
-
-    Args:
-        batch: A dictionary of samples from the replay buffer.
-            state: np.ndarray,
-            action: np.ndarray,
-            reward: float,
-            next_state: np.ndarray,
-            done: bool,
-        device: cpu or cuda
-        dqn: dqn model
-        dqn_target: dqn target model
-        ddqn: whether to use double dqn or not
-        gamma: discount factor
-
-    Returns:
-        loss: TD loss for short-term memory management (remember policy)
-
-    """
-    state = batch["state"]
-    state_next = batch["next_state"]
-    action = [
-        torch.LongTensor(np.array([num.item() for num in a])).reshape(-1, 1).to(device)
-        for a in batch["action"]
-    ]
-    reward = torch.FloatTensor(batch["reward"]).to(device)
-    done = torch.FloatTensor(batch["done"]).to(device)
-
-    # Forward pass on current state to get Q-values
-    q_value_current = dqn(state, policy_type="remember")
-
-    # Forward pass on next state to get Q-values
-    q_value_next = dqn_target(state_next, policy_type="remember")
-
-    if ddqn:
-        q_value_for_action = dqn(state_next, policy_type="remember")
-
-    q_value_current_batch = []
-    q_value_target_batch = []
-
-    # note that the observations are assumed to be randomized.
-    min_lens = [min(len(i), len(j)) for i, j in zip(q_value_current, q_value_next)]
-
-    for idx in range(len(min_lens)):
-        min_len = min_lens[idx]
-
-        action_ = action[idx][:min_len]
-        q_value_current_ = q_value_current[idx][:min_len]
-        q_value_current_chosen = q_value_current_.gather(1, action_)
-        q_value_next_ = q_value_next[idx][:min_len]
-
-        if ddqn:
-            # Double DQN: Use current DQN to select actions, target DQN to evaluate
-            # those actions
-            q_value_for_action_ = q_value_for_action[idx][:min_len]
-            action_next = q_value_for_action_.argmax(dim=1, keepdim=True)
-            q_value_next_chosen = q_value_next_.gather(1, action_next).detach()
-        else:
-            # Vanilla DQN: Use target DQN to get max Q-value for next state
-            q_value_next_chosen = q_value_next_.max(dim=1, keepdim=True)[0].detach()
-
-        # Compute the target Q-values considering whether the state is terminal
-        q_value_target_ = reward[idx] + gamma * q_value_next_chosen * (1 - done[idx])
-
-        q_value_current_batch.append(q_value_current_chosen)
-        q_value_target_batch.append(q_value_target_)
-
-    q_value_current_batch = torch.concat(q_value_current_batch, dim=0)
-    q_value_target_batch = torch.concat(q_value_target_batch, dim=0)
-
-    assert q_value_current_batch.shape == q_value_target_batch.shape
-
-    # Calculate loss
-    loss = F.smooth_l1_loss(q_value_current_batch, q_value_target_batch)
-
-    return loss
-
-
-def compute_loss_forget(
-    batch: dict,
-    device: str,
-    dqn: torch.nn.Module,
-    dqn_target: torch.nn.Module,
-    ddqn: bool,
-    gamma: float,
-) -> torch.Tensor:
-    r"""Return the DQN td loss for forget policy.
-
-    G_t   = r + gamma * v(s_{t+1})  if state != Terminal
-          = r                       otherwise
-
-    Args:
-        batch: A dictionary of samples from the replay buffer.
-            state: np.ndarray,
-            action: np.ndarray,
-            reward: float,
-            next_state: np.ndarray,
-            done: bool,
-        device: cpu or cuda
-        dqn: dqn model
-        dqn_target: dqn target model
-        ddqn: whether to use double dqn or not
-        gamma: discount factor
-
-    Returns:
-        loss: TD loss for the long-term memory management (forget policy)
-
-    """
-
-    state = batch["state"]
-    state_next = batch["next_state"]
-    action = torch.LongTensor(
-        np.array([num.item() for num in batch["action"]]).reshape(-1, 1)
-    ).to(device)
-    reward = torch.FloatTensor(batch["reward"]).reshape(-1, 1).to(device)
-    done = torch.FloatTensor(batch["done"]).reshape(-1, 1).to(device)
-
-    # Forward pass on current state to get Q-values
-    q_value_current = dqn(state, policy_type="forget")
-
-    q_value_current = torch.concat(q_value_current)
-    q_value_current = q_value_current.gather(1, action)
-
-    q_value_next = dqn_target(state_next, policy_type="forget")
-    q_value_next = torch.concat(q_value_next)
-
-    if ddqn:
-        # Double DQN: Use current DQN to select actions, target DQN to evaluate those
-        # actions
-        q_value_for_action = dqn(state_next, policy_type="forget")
-        q_value_for_action = torch.concat(q_value_for_action)
-        action_next = q_value_for_action.argmax(dim=1, keepdim=True)
-        q_value_next = q_value_next.gather(1, action_next).detach()
-    else:
-        # Vanilla DQN: Use target DQN to get max Q-value for next state
-        q_value_next = q_value_next.max(dim=1, keepdim=True)[0].detach()
-
-    # Compute the target Q-values considering whether the state is terminal
-    q_value_target = reward + gamma * q_value_next * (1 - done)
-
-    assert q_value_current.shape == q_value_target.shape
-
-    # Calculate loss
-    loss = F.smooth_l1_loss(q_value_current, q_value_target)
-
-    return loss
-
-
-def update_model(
-    forget_policy: str,
-    remember_policy: str,
-    replay_buffer_remember: ReplayBuffer,
-    replay_buffer_forget: ReplayBuffer,
-    device: str,
-    ddqn: bool,
-    gamma: float,
-    use_gradient_clipping: bool = True,
-    gradient_clip_value: float = 1.0,
-    separate_networks: bool = False,
-    # Shared network parameters
-    optimizer: torch.optim.Optimizer = None,
-    dqn: torch.nn.Module = None,
-    dqn_target: torch.nn.Module = None,
-    # Separate network parameters
-    optimizer_forget: torch.optim.Optimizer = None,
-    optimizer_remember: torch.optim.Optimizer = None,
-    dqn_forget: torch.nn.Module = None,
-    dqn_target_forget: torch.nn.Module = None,
-    dqn_remember: torch.nn.Module = None,
-    dqn_target_remember: torch.nn.Module = None,
-) -> tuple[float, float, float]:
-    r"""Update the model by gradient descent.
-
-    Args:
-        forget_policy: Forget policy type
-        remember_policy: Remember policy type
-        replay_buffer_remember: replay buffer for remember policy
-        replay_buffer_forget: replay buffer for forget policy
-        device: cpu or cuda
-        ddqn: whether to use double dqn or not
-        gamma: discount factor
-        use_gradient_clipping: Whether to use gradient clipping.
-        gradient_clip_value: The maximum norm for gradient clipping.
-        separate_networks: Whether using separate networks for policies
-        optimizer: optimizer for shared network
-        dqn: shared dqn model
-        dqn_target: shared dqn target model
-        optimizer_forget: optimizer for forget network
-        optimizer_remember: optimizer for remember network
-        dqn_forget: forget dqn model
-        dqn_target_forget: forget dqn target model
-        dqn_remember: remember dqn model
-        dqn_target_remember: remember dqn target model
-
-    Returns:
-        loss_remember, loss_forget, loss_combined
-    """
-    loss_remember = torch.tensor(0.0, device=device)
-    loss_forget = torch.tensor(0.0, device=device)
-
-    if remember_policy == "rl":
-        batch_remember = replay_buffer_remember.sample_batch()
-        batch_remember = {
-            "state": batch_remember["state"],
-            "action": batch_remember["action"],
-            "reward": batch_remember["reward"],
-            "next_state": batch_remember["next_state"],
-            "done": batch_remember["done"],
-        }
-        
-        if separate_networks:
-            loss_remember = compute_loss_remember(
-                batch_remember, device, dqn_remember, dqn_target_remember, ddqn, gamma
-            )
-            optimizer_remember.zero_grad()
-            loss_remember.backward()
-            if use_gradient_clipping:
-                torch.nn.utils.clip_grad_norm_(dqn_remember.parameters(), gradient_clip_value)
-            optimizer_remember.step()
-        else:
-            loss_remember = compute_loss_remember(
-                batch_remember, device, dqn, dqn_target, ddqn, gamma
-            )
-
-    if forget_policy == "rl":
-        batch_forget = replay_buffer_forget.sample_batch()
-        batch_forget = {
-            "state": batch_forget["state"],
-            "action": batch_forget["action"],
-            "reward": batch_forget["reward"],
-            "next_state": batch_forget["next_state"],
-            "done": batch_forget["done"],
-        }
-
-        if separate_networks:
-            loss_forget = compute_loss_forget(
-                batch_forget, device, dqn_forget, dqn_target_forget, ddqn, gamma
-            )
-            optimizer_forget.zero_grad()
-            loss_forget.backward()
-            if use_gradient_clipping:
-                torch.nn.utils.clip_grad_norm_(dqn_forget.parameters(), gradient_clip_value)
-            optimizer_forget.step()
-        else:
-            loss_forget = compute_loss_forget(
-                batch_forget, device, dqn, dqn_target, ddqn, gamma
-            )
-
-    # For shared networks, update once with combined loss
-    if not separate_networks and (remember_policy == "rl" or forget_policy == "rl"):
-        loss = loss_remember + loss_forget
-        optimizer.zero_grad()
-        loss.backward()
-        if use_gradient_clipping:
-            torch.nn.utils.clip_grad_norm_(dqn.parameters(), gradient_clip_value)
-        optimizer.step()
-    else:
-        loss = loss_remember + loss_forget
-
-    loss_remember = loss_remember.detach().cpu().numpy().item()
-    loss_forget = loss_forget.detach().cpu().numpy().item()
-    loss = loss.detach().cpu().numpy().item()
-
-    return loss_remember, loss_forget, loss
-
-
 def select_action(
     state: list[list],
     greedy: bool,
@@ -946,6 +1168,20 @@ def save_states_q_values_actions(
             ],
             "action_remember": [
                 None if np.isnan(num) else int(num) for num in a["remember"].tolist()
+            ],
+            "q_values_qa": [
+                [None if np.isnan(num_) else float(num_) for num_ in num]
+                for num in q["qa"].tolist()
+            ],
+            "action_qa": [
+                None if np.isnan(num) else int(num) for num in a["qa"].tolist()
+            ],
+            "q_values_explore": [
+                [None if np.isnan(num_) else float(num_) for num_ in num]
+                for num in q["explore"].tolist()
+            ],
+            "action_explore": [
+                None if np.isnan(num) else int(num) for num in a["explore"].tolist()
             ],
         }
         for s, q, a in zip(states, q_values, actions)

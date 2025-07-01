@@ -35,6 +35,8 @@ for path in tqdm(glob("./training-results-dqn/*/results.yaml")):
     forget_policy = hp.get("forget_policy", None)
     remember_policy = hp.get("remember_policy", "all")
     separate_networks = kwargs.get("separate_networks", False)
+    qa_policy = hp.get("qa_policy", None)
+    explore_policy = hp.get("explore_policy", None)
 
     # Extract network configuration parameters from kwargs
     if architecture_type == "stare":
@@ -71,6 +73,8 @@ for path in tqdm(glob("./training-results-dqn/*/results.yaml")):
         max_memory,
         forget_policy,
         remember_policy,
+        qa_policy,
+        explore_policy,
         separate_networks,
         network_size,
     )
@@ -85,6 +89,8 @@ for config, score_pairs in sorted(results_by_config.items()):
         max_memory,
         forget_policy,
         remember_policy,
+        qa_policy,
+        explore_policy,
         separate_networks,
         network_size,
     ) = config
@@ -97,6 +103,8 @@ for config, score_pairs in sorted(results_by_config.items()):
             "max_memory": max_memory,
             "forget_policy": forget_policy,
             "remember_policy": remember_policy,
+            "qa_policy": qa_policy,
+            "explore_policy": explore_policy,
             "separate_networks": separate_networks,
             "network_size": network_size,
             "test_mean": np.mean(test_scores),
