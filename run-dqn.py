@@ -1,6 +1,9 @@
 import logging
 import multiprocessing
 import random
+import os
+import yaml
+from pathlib import Path
 
 import matplotlib
 
@@ -56,6 +59,7 @@ network_configs = {
         },
     },
 }
+default_root_dir = "training-results-dqn"
 
 
 def run_dqn_experiment(params):
@@ -142,7 +146,7 @@ def run_dqn_experiment(params):
         max_long_term_memory_size=max_memory,
         num_samples_for_results={"val": 5, "test": 5},
         save_results=True,
-        default_root_dir="training-results-dqn",
+        default_root_dir=default_root_dir,
         num_iterations=num_iterations,
         replay_buffer_size=num_iterations,
         batch_size=batch_size,
@@ -171,6 +175,104 @@ def run_dqn_experiment(params):
     )
 
     agent.train()
+
+
+def extract_experiment_params(train_yaml_path):
+    """Extract experiment parameters from train.yaml file."""
+    try:
+        with open(train_yaml_path, "r") as f:
+            data = yaml.safe_load(f)
+
+        # Extract all the parameters that define a unique experiment
+        return {
+            "room_size": data["env_config"]["room_size"],
+            "test_seed": data["kwargs"]["test_seed"],
+            "train_seed": data["kwargs"]["train_seed"],
+            "architecture_type": data["kwargs"]["architecture_type"],
+            "max_memory": data["max_long_term_memory_size"],
+            "forget_policy": data["forget_policy"],
+            "remember_policy": data["remember_policy"],
+            "qa_policy": data["qa_policy"],
+            "explore_policy": data["explore_policy"],
+            "separate_networks": data["kwargs"]["separate_networks"],
+            "embedding_dim": data["kwargs"][
+                f"{data['kwargs']['architecture_type']}_params"
+            ]["embedding_dim"],
+            "num_layers": data["kwargs"][
+                f"{data['kwargs']['architecture_type']}_params"
+            ]["num_layers"],
+            "num_heads": data["kwargs"]
+            .get("transformer_params", {})
+            .get(
+                "num_heads", data["kwargs"].get("stare_params", {}).get("num_heads", 0)
+            ),
+            "mlp_hidden_layers": data["kwargs"]["mlp_params"]["num_hidden_layers"],
+        }
+    except (FileNotFoundError, KeyError, yaml.YAMLError):
+        return None
+
+
+def is_experiment_completed(params, default_root_dir):
+    """Check if an experiment with the given parameters is already completed."""
+    (
+        room_size,
+        test_seed,
+        architecture_type,
+        max_memory,
+        forget_policy,
+        remember_policy,
+        qa_policy,
+        explore_policy,
+        separate_networks,
+        embedding_dim,
+        num_layers,
+        num_heads,
+        mlp_hidden_layers,
+    ) = params
+
+    train_seed = test_seed + 5
+
+    # Check all subdirectories in the results directory
+    results_dir = Path(default_root_dir)
+    if not results_dir.exists():
+        return False
+
+    for subdir in results_dir.iterdir():
+        if not subdir.is_dir():
+            continue
+
+        train_yaml_path = subdir / "train.yaml"
+        results_yaml_path = subdir / "results.yaml"
+
+        # Check if experiment is completed (has results.yaml)
+        if not results_yaml_path.exists():
+            continue
+
+        # Extract parameters from existing experiment
+        existing_params = extract_experiment_params(train_yaml_path)
+        if existing_params is None:
+            continue
+
+        # Compare all parameters
+        if (
+            existing_params["room_size"] == room_size
+            and existing_params["test_seed"] == test_seed
+            and existing_params["train_seed"] == train_seed
+            and existing_params["architecture_type"] == architecture_type
+            and existing_params["max_memory"] == max_memory
+            and existing_params["forget_policy"] == forget_policy
+            and existing_params["remember_policy"] == remember_policy
+            and existing_params["qa_policy"] == qa_policy
+            and existing_params["explore_policy"] == explore_policy
+            and existing_params["separate_networks"] == separate_networks
+            and existing_params["embedding_dim"] == embedding_dim
+            and existing_params["num_layers"] == num_layers
+            and existing_params["num_heads"] == num_heads
+            and existing_params["mlp_hidden_layers"] == mlp_hidden_layers
+        ):
+            return True
+
+    return False
 
 
 if __name__ == "__main__":
@@ -209,23 +311,29 @@ if __name__ == "__main__":
                                 separate_networks,
                             ) = policy_combo
 
-                            all_combinations.append(
-                                (
-                                    room_size,
-                                    seed,
-                                    arch_type,
-                                    memory,
-                                    forget_policy,
-                                    remember_policy,
-                                    qa_policy,
-                                    explore_policy,
-                                    separate_networks,
-                                    config["embedding_dim"],
-                                    config["num_layers"],
-                                    config["num_heads"],
-                                    config["mlp_hidden_layers"],
-                                )
+                            params = (
+                                room_size,
+                                seed,
+                                arch_type,
+                                memory,
+                                forget_policy,
+                                remember_policy,
+                                qa_policy,
+                                explore_policy,
+                                separate_networks,
+                                config["embedding_dim"],
+                                config["num_layers"],
+                                config["num_heads"],
+                                config["mlp_hidden_layers"],
                             )
+
+                            # Only add if not already completed
+                            if not is_experiment_completed(params, default_root_dir):
+                                all_combinations.append(params)
+                            else:
+                                print(
+                                    f"Skipping already completed experiment: {params}"
+                                )
 
     random.shuffle(all_combinations)
 
