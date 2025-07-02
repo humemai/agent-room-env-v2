@@ -134,21 +134,47 @@ for room_filter in room_sizes:
         print(f"No data found for room size: {room_filter}")
         continue
 
-    # Sort by mean_score in descending order
-    df_sorted = df_filtered.sort_values(by="test_mean", ascending=False).reset_index(drop=True)
+    # Create separate DataFrames for each memory size
+    memory_sizes = sorted(df_filtered["max_memory"].unique())
+    dataframes_by_memory = {}
 
-    print(f"Total configurations: {len(df_sorted)}")
-    print()
-    print(df_sorted)
+    print(f"Creating {len(memory_sizes)} DataFrames for memory sizes: {memory_sizes}")
+    print("=" * 80)
 
-    # Find best configuration for this environment size
-    best_overall = df_sorted.iloc[0]
-    print(f"\nBest configuration for {room_filter}:")
+    for memory_size in memory_sizes:
+        # Filter data for this specific memory size
+        memory_df = df_filtered[df_filtered["max_memory"] == memory_size].drop(
+            columns="max_memory"
+        )
+        # Sort by test_mean in descending order
+        memory_df = memory_df.sort_values(by="test_mean", ascending=False).reset_index(
+            drop=True
+        )
+
+        # Store in dictionary
+        dataframes_by_memory[memory_size] = memory_df
+
+        # Display the DataFrame
+        print(f"\n=== DataFrame for Memory Size: {memory_size} ===")
+        print()
+        print(memory_df)
+        print("-" * 80)
+
+    # Summary statistics
+    print(f"\n=== SUMMARY FOR {room_filter} ===")
+    print(f"Total number of memory sizes: {len(memory_sizes)}")
+    print(f"Memory sizes analyzed: {memory_sizes}")
+
+    # Find best configuration across all memory sizes for this environment size
+    best_overall = df_filtered.loc[df_filtered["test_mean"].idxmax()]
+    print(f"\nBest overall configuration for {room_filter}:")
     print(f"  Architecture: {best_overall['architecture_type']}")
     print(f"  Network Size: {best_overall['network_size']}")
     print(f"  Max Memory: {best_overall['max_memory']}")
     print(f"  Forget Policy: {best_overall['forget_policy']}")
     print(f"  Remember Policy: {best_overall['remember_policy']}")
+    print(f"  QA Policy: {best_overall['qa_policy']}")
+    print(f"  Explore Policy: {best_overall['explore_policy']}")
     print(f"  Separate Networks: {best_overall['separate_networks']}")
     print(f"  Test Score: {best_overall['test_mean']:.4f} ± {best_overall['test_std']:.4f}")
     print(f"  Val Score: {best_overall['val_mean']:.4f} ± {best_overall['val_std']:.4f}")
@@ -156,17 +182,40 @@ for room_filter in room_sizes:
     # Export results
     print(f"\n=== EXPORTING FILES FOR {room_filter} ===")
 
+    # Export global results (all data for the environment size, sorted by test_mean)
+    global_section = df_filtered.sort_values(
+        by="test_mean", ascending=False
+    ).reset_index(drop=True)
+
     # Save JSON file
     json_filename = f"./data/results_{room_filter}_dqn.json"
-    df_sorted.to_json(json_filename, orient="records", indent=2)
-    print(f"Results for {room_filter} exported to {json_filename}")
+    global_section.to_json(json_filename, orient="records", indent=2)
+    print(f"Global results for {room_filter} exported to {json_filename}")
 
-    # Save Markdown file
+    # Save single Markdown file with multiple tables for each memory size
     markdown_filename = f"./data/results_{room_filter}_dqn.md"
     markdown_content = f"# DQN Results for {room_filter}\n\n"
-    markdown_content += f"Total configurations: {len(df_sorted)}\n\n"
-    markdown_content += df_sorted.to_markdown(index=False, floatfmt=".0f")
-    markdown_content += "\n"
+    markdown_content += f"Total configurations: {len(global_section)}\n"
+    markdown_content += f"Memory sizes: {memory_sizes}\n\n"
+    
+    # Add overall table
+    markdown_content += "## Overall Results (All Memory Sizes)\n\n"
+    markdown_content += global_section.to_markdown(index=False, floatfmt=".0f")
+    markdown_content += "\n\n"
+    
+    # Add separate table for each memory size
+    for memory_size in memory_sizes:
+        memory_df = df_filtered[df_filtered["max_memory"] == memory_size].drop(
+            columns="max_memory"
+        )
+        memory_df = memory_df.sort_values(by="test_mean", ascending=False).reset_index(
+            drop=True
+        )
+        
+        markdown_content += f"## Memory Size {memory_size}\n\n"
+        markdown_content += f"Total configurations: {len(memory_df)}\n\n"
+        markdown_content += memory_df.to_markdown(index=False, floatfmt=".0f")
+        markdown_content += "\n\n"
 
     with open(markdown_filename, "w") as f:
         f.write(markdown_content)
