@@ -1,11 +1,11 @@
 import logging
 import multiprocessing
-import random
 import os
-import yaml
+import random
 from pathlib import Path
 
 import matplotlib
+import yaml
 
 matplotlib.use("Agg")
 logger = logging.getLogger()
@@ -102,18 +102,14 @@ def run_dqn_experiment(params):
     stare_params = {
         "embedding_dim": embedding_dim,
         "num_layers": num_layers,
-        "gcn_drop": 0.1,
         "triple_qual_weight": 0.8,
         "silu_between_layers": True,
-        "dropout_between_layers": True,
     }
 
     gcn_params = {
         "embedding_dim": embedding_dim,
         "num_layers": num_layers,
-        "gcn_drop": 0.1,
         "silu_between_layers": True,
-        "dropout_between_layers": True,
     }
 
     transformer_params = {
@@ -121,7 +117,6 @@ def run_dqn_experiment(params):
         "dim_feedforward": embedding_dim * 4,
         "num_layers": num_layers,
         "num_heads": num_heads,
-        "dropout": 0.1,
     }
 
     mlp_params = {"num_hidden_layers": mlp_hidden_layers, "dueling_dqn": True}

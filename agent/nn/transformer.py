@@ -304,7 +304,6 @@ class TransformerMemoryEncoder(nn.Module):
         dim_feedforward: int,  # Typically 4x embedding_dim
         num_layers: int = 2,
         num_heads: int = 8,
-        dropout: float = 0.1,
         device: str = "cpu",
     ):
         super().__init__()
@@ -317,7 +316,7 @@ class TransformerMemoryEncoder(nn.Module):
             d_model=embedding_dim,
             nhead=num_heads,
             dim_feedforward=dim_feedforward,  # Typically 4x embedding_dim
-            dropout=dropout,
+            dropout=0.0,  # Set to 0.0 to disable dropout
             batch_first=True,
             device=device,
         )
@@ -354,7 +353,6 @@ class TransformerMemoryNet(nn.Module):
         dim_feedforward: int = 256,  # Typically 4x embedding_dim
         num_transformer_layers: int = 2,
         num_heads: int = 8,
-        dropout: float = 0.1,
         mlp_params: dict = {"num_hidden_layers": 2, "dueling_dqn": True},
         device: str = "cpu",
         forget_needs_rl: bool = True,
@@ -416,7 +414,6 @@ class TransformerMemoryNet(nn.Module):
             dim_feedforward=dim_feedforward,
             num_layers=num_transformer_layers,
             num_heads=num_heads,
-            dropout=dropout,
             device=device,
         )
 

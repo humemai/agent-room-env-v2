@@ -3,9 +3,8 @@ import logging
 import multiprocessing
 import random
 
-from rdflib import Namespace
-
 from agent import LongTermAgent
+from rdflib import Namespace
 
 ns = Namespace("https://humem.ai/ontology#")
 

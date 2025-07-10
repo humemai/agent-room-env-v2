@@ -62,24 +62,19 @@ class DQNAgent(LongTermAgent):
         stare_params: dict = {
             "embedding_dim": 64,
             "num_layers": 2,
-            "gcn_drop": 0.1,
             "triple_qual_weight": 0.8,
             "silu_between_layers": True,
-            "dropout_between_layers": True,
         },
         gcn_params: dict = {
             "embedding_dim": 64,
             "num_layers": 2,
-            "gcn_drop": 0.1,
             "silu_between_layers": True,
-            "dropout_between_layers": True,
         },
         transformer_params: dict = {
             "embedding_dim": 64,
             "num_layers": 2,
             "dim_feedforward": 256,  # typically 4 * embedding_dim
             "num_heads": 8,
-            "dropout": 0.1,
         },
         mlp_params: dict = {"num_hidden_layers": 2, "dueling_dqn": True},
         validation_interval: int = 5,

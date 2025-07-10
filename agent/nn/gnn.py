@@ -29,24 +29,19 @@ class GNN(torch.nn.Module):
         stare_params: dict = {
             "embedding_dim": 64,
             "num_layers": 2,
-            "gcn_drop": 0.1,
             "triple_qual_weight": 0.8,
             "silu_between_layers": True,
-            "dropout_between_layers": True,
         },
         gcn_params: dict = {
             "embedding_dim": 64,
             "num_layers": 2,
-            "gcn_drop": 0.1,
             "silu_between_layers": True,
-            "dropout_between_layers": True,
         },
         transformer_params: dict = {
             "embedding_dim": 64,
             "num_layers": 2,
             "dim_feedforward": 256,
             "num_heads": 8,
-            "dropout": 0.1,
         },
         mlp_params: dict = {"num_hidden_layers": 2, "dueling_dqn": True},
         device: str = "cpu",
@@ -149,7 +144,6 @@ class GNN(torch.nn.Module):
                 dim_feedforward=self.transformer_params["dim_feedforward"],
                 num_transformer_layers=self.transformer_params["num_layers"],
                 num_heads=self.transformer_params["num_heads"],
-                dropout=self.transformer_params["dropout"],
                 mlp_params=mlp_params,
                 device=device,
                 forget_needs_rl=forget_needs_rl,
@@ -194,9 +188,7 @@ class GNN(torch.nn.Module):
             torch.nn.init.xavier_normal_(self.relation_embeddings)
 
         self.silu_between_gcn_layers = arch_params.get("silu_between_layers")
-        self.dropout_between_gcn_layers = arch_params.get("dropout_between_layers")
         self.silu = torch.nn.SiLU()
-        self.drop = torch.nn.Dropout(arch_params.get("gcn_drop"))
 
         if self.gcn_type == "stare":
             self.gcn_layers = torch.nn.ModuleList(
@@ -205,7 +197,6 @@ class GNN(torch.nn.Module):
                         in_channels=self.embedding_dim,
                         out_channels=self.embedding_dim,
                         num_rels=len(relations),
-                        gcn_drop=arch_params.get("gcn_drop"),
                         triple_qual_weight=arch_params.get("triple_qual_weight"),
                         device=device,
                     )
@@ -584,8 +575,6 @@ class GNN(torch.nn.Module):
             else:
                 raise ValueError(f"{self.gcn_type} is not a valid GNN type.")
 
-            if self.dropout_between_gcn_layers:
-                entity_embeddings = self.drop(entity_embeddings)
             if self.silu_between_gcn_layers:
                 entity_embeddings = F.silu(entity_embeddings)
 

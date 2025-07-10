@@ -22,7 +22,6 @@ class StarEConvLayer(MessagePassing):
         in_channels (int): The number of input channels.
         out_channels (int): The number of output channels.
         num_rels (int): The number of relations.
-        gcn_drop (float): The dropout probability.
         triple_qual_weight (float): The weight for the triple and qualifier embeddings.
         device (Optional[torch.device]): The device to use.
     """
@@ -32,7 +31,6 @@ class StarEConvLayer(MessagePassing):
         in_channels: int,
         out_channels: int,
         num_rels: int,
-        gcn_drop: float = 0.1,
         triple_qual_weight: float = 0.8,
         device: str = "cpu",
     ):
@@ -42,7 +40,6 @@ class StarEConvLayer(MessagePassing):
             in_channels: The number of input channels.
             out_channels: The number of output channels.
             num_rels: The number of relations.
-            gcn_drop: The dropout probability.
             triple_qual_weight: The weight for the triple and qualifier embeddings.
             device: The device to use for computations.
         """
@@ -62,7 +59,6 @@ class StarEConvLayer(MessagePassing):
         self.loop_rel = torch.nn.Parameter(torch.Tensor(1, in_channels).to(device))
         self.loop_ent = torch.nn.Parameter(torch.Tensor(1, in_channels).to(device))
 
-        self.drop = torch.nn.Dropout(gcn_drop)
         self.bn = torch.nn.BatchNorm1d(out_channels).to(device)
 
         self.triple_qual_weight = triple_qual_weight
@@ -188,8 +184,8 @@ class StarEConvLayer(MessagePassing):
         )
 
         out = (
-            self.drop(in_res) * (1 / 3)
-            + self.drop(out_res) * (1 / 3)
+            in_res * (1 / 3)
+            + out_res * (1 / 3)
             + loop_res * (1 / 3)
         )
 
