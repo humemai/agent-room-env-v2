@@ -24,6 +24,16 @@
     "test_std":60.1245374203,
     "qa_policy":"most_recently_used",
     "explore_policy":"bfs",
+    "forget_policy":"lru",
+    "remember_policy":"all",
+    "memory_size":1024,
+    "n_seeds":5
+  },
+  {
+    "test_mean":742.2,
+    "test_std":60.1245374203,
+    "qa_policy":"most_recently_used",
+    "explore_policy":"bfs",
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":1024,
@@ -35,26 +45,6 @@
     "qa_policy":"most_recently_used",
     "explore_policy":"bfs",
     "forget_policy":"lfu",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":742.2,
-    "test_std":60.1245374203,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":742.2,
-    "test_std":60.1245374203,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":1024,
     "n_seeds":5
@@ -100,16 +90,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":734.2,
-    "test_std":61.1143191077,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":512,
-    "n_seeds":5
-  },
-  {
     "test_mean":732.8,
     "test_std":58.4650322843,
     "qa_policy":"most_recently_used",
@@ -144,6 +124,16 @@
     "test_std":49.9655881583,
     "qa_policy":"most_recently_used",
     "explore_policy":"dijkstra",
+    "forget_policy":"lfu",
+    "remember_policy":"all",
+    "memory_size":1024,
+    "n_seeds":5
+  },
+  {
+    "test_mean":730.2,
+    "test_std":49.9655881583,
+    "qa_policy":"most_recently_used",
+    "explore_policy":"dijkstra",
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":1024,
@@ -155,26 +145,6 @@
     "qa_policy":"most_recently_used",
     "explore_policy":"dijkstra",
     "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":730.2,
-    "test_std":49.9655881583,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":730.2,
-    "test_std":49.9655881583,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":1024,
     "n_seeds":5
@@ -215,16 +185,6 @@
     "qa_policy":"most_recently_used",
     "explore_policy":"dijkstra",
     "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":512,
-    "n_seeds":5
-  },
-  {
-    "test_mean":725.6,
-    "test_std":50.7960628396,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
     "remember_policy":"all",
     "memory_size":512,
     "n_seeds":5
@@ -290,16 +250,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":716.4,
-    "test_std":61.7562952257,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":512,
-    "n_seeds":5
-  },
-  {
     "test_mean":714.2,
     "test_std":56.9469928969,
     "qa_policy":"most_recently_used",
@@ -307,16 +257,6 @@
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":256,
-    "n_seeds":5
-  },
-  {
-    "test_mean":711.2,
-    "test_std":65.0273788492,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":1024,
     "n_seeds":5
   },
   {
@@ -357,26 +297,6 @@
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":256,
-    "n_seeds":5
-  },
-  {
-    "test_mean":709.0,
-    "test_std":84.0975623904,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":256,
-    "n_seeds":5
-  },
-  {
-    "test_mean":707.2,
-    "test_std":60.4959502777,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":512,
     "n_seeds":5
   },
   {
@@ -450,13 +370,13 @@
     "n_seeds":5
   },
   {
-    "test_mean":702.2,
-    "test_std":51.6503630191,
-    "qa_policy":"most_recently_used",
+    "test_mean":700.8,
+    "test_std":62.4160235837,
+    "qa_policy":"most_recently_added",
     "explore_policy":"dijkstra",
-    "forget_policy":"random",
+    "forget_policy":"fifo",
     "remember_policy":"all",
-    "memory_size":256,
+    "memory_size":1024,
     "n_seeds":5
   },
   {
@@ -475,26 +395,6 @@
     "qa_policy":"most_recently_added",
     "explore_policy":"dijkstra",
     "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":700.8,
-    "test_std":62.4160235837,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":700.8,
-    "test_std":62.4160235837,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
     "remember_policy":"all",
     "memory_size":1024,
     "n_seeds":5
@@ -821,6 +721,16 @@
   },
   {
     "test_mean":631.4,
+    "test_std":35.00628515,
+    "qa_policy":"most_frequently_used",
+    "explore_policy":"dijkstra",
+    "forget_policy":"lru",
+    "remember_policy":"all",
+    "memory_size":256,
+    "n_seeds":5
+  },
+  {
+    "test_mean":631.4,
     "test_std":28.5559100713,
     "qa_policy":"most_frequently_used",
     "explore_policy":"dijkstra",
@@ -840,36 +750,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":631.4,
-    "test_std":35.00628515,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":256,
-    "n_seeds":5
-  },
-  {
-    "test_mean":631.2,
-    "test_std":27.5347053734,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":512,
-    "n_seeds":5
-  },
-  {
-    "test_mean":631.2,
-    "test_std":27.5347053734,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":512,
-    "n_seeds":5
-  },
-  {
     "test_mean":630.4,
     "test_std":28.6258624324,
     "qa_policy":"most_frequently_used",
@@ -884,16 +764,6 @@
     "test_std":31.8684797253,
     "qa_policy":"most_frequently_used",
     "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":630.0,
-    "test_std":31.8684797253,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
     "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":1024,
@@ -904,6 +774,16 @@
     "test_std":31.8684797253,
     "qa_policy":"most_frequently_used",
     "explore_policy":"bfs",
+    "forget_policy":"fifo",
+    "remember_policy":"all",
+    "memory_size":1024,
+    "n_seeds":5
+  },
+  {
+    "test_mean":630.0,
+    "test_std":31.8684797253,
+    "qa_policy":"most_frequently_used",
+    "explore_policy":"dijkstra",
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":1024,
@@ -925,26 +805,6 @@
     "qa_policy":"most_frequently_used",
     "explore_policy":"bfs",
     "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":630.0,
-    "test_std":31.8684797253,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":630.0,
-    "test_std":31.8684797253,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
     "remember_policy":"all",
     "memory_size":1024,
     "n_seeds":5
@@ -970,16 +830,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":628.8,
-    "test_std":76.0668127372,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":256,
-    "n_seeds":5
-  },
-  {
     "test_mean":627.0,
     "test_std":90.2285985705,
     "qa_policy":"most_recently_added",
@@ -987,16 +837,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":627.0,
-    "test_std":82.8613299435,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":256,
     "n_seeds":5
   },
   {
@@ -1040,26 +880,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":615.6,
-    "test_std":72.3369891549,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":256,
-    "n_seeds":5
-  },
-  {
-    "test_mean":611.8,
-    "test_std":42.6211215244,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
-    "n_seeds":5
-  },
-  {
     "test_mean":605.2,
     "test_std":92.7607675691,
     "qa_policy":"most_recently_used",
@@ -1100,16 +920,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":597.0,
-    "test_std":58.7877538268,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
-    "n_seeds":5
-  },
-  {
     "test_mean":589.6,
     "test_std":132.0024242202,
     "qa_policy":"most_frequently_used",
@@ -1127,16 +937,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":64,
-    "n_seeds":5
-  },
-  {
-    "test_mean":588.8,
-    "test_std":65.6639931774,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":256,
     "n_seeds":5
   },
   {
@@ -1160,16 +960,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":569.4,
-    "test_std":71.4887403722,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
-    "n_seeds":5
-  },
-  {
     "test_mean":566.6,
     "test_std":124.7022052732,
     "qa_policy":"most_frequently_used",
@@ -1177,36 +967,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":563.4,
-    "test_std":94.3198812552,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
-    "n_seeds":5
-  },
-  {
-    "test_mean":554.0,
-    "test_std":80.9864186145,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
-    "n_seeds":5
-  },
-  {
-    "test_mean":546.8,
-    "test_std":77.0386915777,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
     "n_seeds":5
   },
   {
@@ -1414,7 +1174,7 @@
     "test_std":68.8923798399,
     "qa_policy":"most_frequently_used",
     "explore_policy":"random",
-    "forget_policy":"lfu",
+    "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":256,
     "n_seeds":5
@@ -1434,7 +1194,7 @@
     "test_std":68.8923798399,
     "qa_policy":"most_frequently_used",
     "explore_policy":"random",
-    "forget_policy":"lru",
+    "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":256,
     "n_seeds":5
@@ -1447,16 +1207,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":256,
-    "n_seeds":5
-  },
-  {
-    "test_mean":415.0,
-    "test_std":65.4339361494,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
     "n_seeds":5
   },
   {
@@ -1480,16 +1230,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":408.4,
-    "test_std":74.4301014375,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":256,
-    "n_seeds":5
-  },
-  {
     "test_mean":406.8,
     "test_std":80.5242820521,
     "qa_policy":"most_frequently_used",
@@ -1497,26 +1237,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":128,
-    "n_seeds":5
-  },
-  {
-    "test_mean":405.2,
-    "test_std":97.5774564128,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
-    "n_seeds":5
-  },
-  {
-    "test_mean":402.8,
-    "test_std":43.8333206591,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
     "n_seeds":5
   },
   {
@@ -1570,23 +1290,13 @@
     "n_seeds":5
   },
   {
-    "test_mean":395.4,
-    "test_std":39.6968512605,
+    "test_mean":392.4,
+    "test_std":140.7616425025,
     "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
-    "n_seeds":5
-  },
-  {
-    "test_mean":393.2,
-    "test_std":84.1508169895,
-    "qa_policy":"most_frequently_used",
     "explore_policy":"random",
-    "forget_policy":"random",
+    "forget_policy":"fifo",
     "remember_policy":"all",
-    "memory_size":512,
+    "memory_size":1024,
     "n_seeds":5
   },
   {
@@ -1604,27 +1314,7 @@
     "test_std":140.7616425025,
     "qa_policy":"most_recently_added",
     "explore_policy":"random",
-    "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":392.4,
-    "test_std":140.7616425025,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
     "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":392.4,
-    "test_std":140.7616425025,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
     "remember_policy":"all",
     "memory_size":1024,
     "n_seeds":5
@@ -1644,7 +1334,7 @@
     "test_std":83.1009025222,
     "qa_policy":"most_frequently_used",
     "explore_policy":"random",
-    "forget_policy":"lfu",
+    "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":512,
     "n_seeds":5
@@ -1654,6 +1344,16 @@
     "test_std":83.1009025222,
     "qa_policy":"most_frequently_used",
     "explore_policy":"random",
+    "forget_policy":"lfu",
+    "remember_policy":"all",
+    "memory_size":512,
+    "n_seeds":5
+  },
+  {
+    "test_mean":389.4,
+    "test_std":133.5164409352,
+    "qa_policy":"most_recently_added",
+    "explore_policy":"random",
     "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":512,
@@ -1670,13 +1370,23 @@
     "n_seeds":5
   },
   {
-    "test_mean":389.4,
-    "test_std":133.5164409352,
-    "qa_policy":"most_recently_added",
+    "test_mean":388.8,
+    "test_std":88.6755885236,
+    "qa_policy":"most_frequently_used",
+    "explore_policy":"random",
+    "forget_policy":"lfu",
+    "remember_policy":"all",
+    "memory_size":1024,
+    "n_seeds":5
+  },
+  {
+    "test_mean":388.8,
+    "test_std":88.6755885236,
+    "qa_policy":"most_frequently_used",
     "explore_policy":"random",
     "forget_policy":"lru",
     "remember_policy":"all",
-    "memory_size":512,
+    "memory_size":1024,
     "n_seeds":5
   },
   {
@@ -1687,36 +1397,6 @@
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":256,
-    "n_seeds":5
-  },
-  {
-    "test_mean":388.8,
-    "test_std":88.6755885236,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":388.8,
-    "test_std":88.6755885236,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"lfu",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":388.8,
-    "test_std":88.6755885236,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":1024,
     "n_seeds":5
   },
   {
@@ -1735,26 +1415,6 @@
     "qa_policy":"most_recently_added",
     "explore_policy":"random",
     "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":512,
-    "n_seeds":5
-  },
-  {
-    "test_mean":383.8,
-    "test_std":64.9750721431,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
-    "n_seeds":5
-  },
-  {
-    "test_mean":381.6,
-    "test_std":126.7652949352,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
     "remember_policy":"all",
     "memory_size":512,
     "n_seeds":5
@@ -1830,16 +1490,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":367.6,
-    "test_std":62.3942305025,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
-    "n_seeds":5
-  },
-  {
     "test_mean":362.6,
     "test_std":57.1160222705,
     "qa_policy":"most_frequently_used",
@@ -1847,16 +1497,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":8,
-    "n_seeds":5
-  },
-  {
-    "test_mean":358.2,
-    "test_std":62.8057322225,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":512,
     "n_seeds":5
   },
   {
@@ -1914,16 +1554,6 @@
     "test_std":74.2331462354,
     "qa_policy":"most_recently_used",
     "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":1024,
-    "n_seeds":5
-  },
-  {
-    "test_mean":352.8,
-    "test_std":74.2331462354,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":1024,
@@ -1970,16 +1600,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":347.4,
-    "test_std":109.8628235574,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
-    "n_seeds":5
-  },
-  {
     "test_mean":343.2,
     "test_std":90.7709204536,
     "qa_policy":"most_recently_added",
@@ -2000,20 +1620,10 @@
     "n_seeds":5
   },
   {
-    "test_mean":340.4,
-    "test_std":59.9419719395,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
-    "n_seeds":5
-  },
-  {
     "test_mean":339.4,
     "test_std":36.5436725029,
     "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
+    "explore_policy":"dijkstra",
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":32,
@@ -2023,7 +1633,7 @@
     "test_mean":339.4,
     "test_std":36.5436725029,
     "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
+    "explore_policy":"bfs",
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":32,
@@ -2057,26 +1667,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":128,
-    "n_seeds":5
-  },
-  {
-    "test_mean":333.2,
-    "test_std":61.5447804448,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":256,
-    "n_seeds":5
-  },
-  {
-    "test_mean":328.2,
-    "test_std":100.0127991809,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":256,
     "n_seeds":5
   },
   {
@@ -2250,26 +1840,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":285.0,
-    "test_std":51.9307230837,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":282.8,
-    "test_std":64.5055036412,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
-    "n_seeds":5
-  },
-  {
     "test_mean":280.2,
     "test_std":68.4204647748,
     "qa_policy":"most_frequently_used",
@@ -2277,16 +1847,6 @@
     "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":16,
-    "n_seeds":5
-  },
-  {
-    "test_mean":280.0,
-    "test_std":103.9942306092,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":128,
     "n_seeds":5
   },
   {
@@ -2310,26 +1870,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":278.0,
-    "test_std":56.8682688325,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":277.2,
-    "test_std":61.7167724367,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
-    "n_seeds":5
-  },
-  {
     "test_mean":276.0,
     "test_std":22.3338308402,
     "qa_policy":"most_frequently_used",
@@ -2337,16 +1877,6 @@
     "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":8,
-    "n_seeds":5
-  },
-  {
-    "test_mean":269.6,
-    "test_std":31.9474568628,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
     "n_seeds":5
   },
   {
@@ -2367,26 +1897,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":8,
-    "n_seeds":5
-  },
-  {
-    "test_mean":260.6,
-    "test_std":50.6304256352,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
-    "n_seeds":5
-  },
-  {
-    "test_mean":251.4,
-    "test_std":47.0642114563,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
     "n_seeds":5
   },
   {
@@ -2440,16 +1950,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":233.4,
-    "test_std":57.5416370987,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
-    "n_seeds":5
-  },
-  {
     "test_mean":230.6,
     "test_std":53.983701244,
     "qa_policy":"most_recently_used",
@@ -2470,16 +1970,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":222.0,
-    "test_std":63.6113197474,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":64,
-    "n_seeds":5
-  },
-  {
     "test_mean":221.6,
     "test_std":22.4908870434,
     "qa_policy":"most_recently_added",
@@ -2487,16 +1977,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":210.8,
-    "test_std":48.4371758054,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":16,
     "n_seeds":5
   },
   {
@@ -2600,26 +2080,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":192.0,
-    "test_std":13.8996402831,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":16,
-    "n_seeds":5
-  },
-  {
-    "test_mean":190.2,
-    "test_std":24.8306262507,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":16,
-    "n_seeds":5
-  },
-  {
     "test_mean":188.2,
     "test_std":81.9009157458,
     "qa_policy":"most_recently_used",
@@ -2630,26 +2090,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":185.0,
-    "test_std":48.0832611207,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":16,
-    "n_seeds":5
-  },
-  {
-    "test_mean":183.6,
-    "test_std":28.8,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":16,
-    "n_seeds":5
-  },
-  {
     "test_mean":182.4,
     "test_std":57.5729102964,
     "qa_policy":"most_recently_used",
@@ -2657,16 +2097,6 @@
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":64,
-    "n_seeds":5
-  },
-  {
-    "test_mean":182.4,
-    "test_std":48.7631008038,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":16,
     "n_seeds":5
   },
   {
@@ -2730,16 +2160,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":160.2,
-    "test_std":20.1335540827,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
-    "n_seeds":5
-  },
-  {
     "test_mean":159.8,
     "test_std":28.561512565,
     "qa_policy":"most_recently_used",
@@ -2747,16 +2167,6 @@
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":156.6,
-    "test_std":35.8586112391,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":16,
     "n_seeds":5
   },
   {
@@ -2772,7 +2182,7 @@
   {
     "test_mean":153.8,
     "test_std":35.3066565962,
-    "qa_policy":"most_recently_used",
+    "qa_policy":"most_frequently_used",
     "explore_policy":"random",
     "forget_policy":"lfu",
     "remember_policy":"all",
@@ -2781,18 +2191,8 @@
   },
   {
     "test_mean":153.8,
-    "test_std":41.9304185526,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":153.8,
     "test_std":35.3066565962,
-    "qa_policy":"most_frequently_used",
+    "qa_policy":"most_recently_used",
     "explore_policy":"random",
     "forget_policy":"lfu",
     "remember_policy":"all",
@@ -2807,36 +2207,6 @@
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":150.0,
-    "test_std":59.7494769852,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":148.0,
-    "test_std":41.2698437118,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":32,
-    "n_seeds":5
-  },
-  {
-    "test_mean":147.8,
-    "test_std":50.8306993853,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
     "n_seeds":5
   },
   {
@@ -2910,16 +2280,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":138.6,
-    "test_std":39.9028821014,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
-    "n_seeds":5
-  },
-  {
     "test_mean":138.2,
     "test_std":14.105318146,
     "qa_policy":"most_recently_added",
@@ -2970,29 +2330,9 @@
     "n_seeds":5
   },
   {
-    "test_mean":133.8,
-    "test_std":35.442347552,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":16,
-    "n_seeds":5
-  },
-  {
-    "test_mean":133.0,
-    "test_std":23.2465051137,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
-    "n_seeds":5
-  },
-  {
     "test_mean":132.6,
     "test_std":24.0715599827,
-    "qa_policy":"most_recently_used",
+    "qa_policy":"most_frequently_used",
     "explore_policy":"dijkstra",
     "forget_policy":"fifo",
     "remember_policy":"all",
@@ -3002,7 +2342,7 @@
   {
     "test_mean":132.6,
     "test_std":24.0715599827,
-    "qa_policy":"most_frequently_used",
+    "qa_policy":"most_recently_used",
     "explore_policy":"dijkstra",
     "forget_policy":"fifo",
     "remember_policy":"all",
@@ -3020,16 +2360,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":130.8,
-    "test_std":10.7032705282,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
-    "n_seeds":5
-  },
-  {
     "test_mean":128.6,
     "test_std":55.9985714103,
     "qa_policy":"most_recently_used",
@@ -3040,31 +2370,11 @@
     "n_seeds":5
   },
   {
-    "test_mean":127.2,
-    "test_std":28.4492530658,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
-    "n_seeds":5
-  },
-  {
     "test_mean":126.8,
     "test_std":39.2601579212,
     "qa_policy":"most_recently_used",
     "explore_policy":"random",
     "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":16,
-    "n_seeds":5
-  },
-  {
-    "test_mean":123.6,
-    "test_std":46.7700759033,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
     "remember_policy":"all",
     "memory_size":16,
     "n_seeds":5
@@ -3097,26 +2407,6 @@
     "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":116.2,
-    "test_std":32.5539552128,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":4,
-    "n_seeds":5
-  },
-  {
-    "test_mean":115.8,
-    "test_std":32.8597017637,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":4,
     "n_seeds":5
   },
   {
@@ -3160,29 +2450,9 @@
     "n_seeds":5
   },
   {
-    "test_mean":111.6,
-    "test_std":21.7402851867,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
-    "n_seeds":5
-  },
-  {
-    "test_mean":107.8,
-    "test_std":14.062716665,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":4,
-    "n_seeds":5
-  },
-  {
     "test_mean":105.0,
     "test_std":20.4841402065,
-    "qa_policy":"most_recently_used",
+    "qa_policy":"most_frequently_used",
     "explore_policy":"bfs",
     "forget_policy":"lru",
     "remember_policy":"all",
@@ -3192,7 +2462,7 @@
   {
     "test_mean":105.0,
     "test_std":20.4841402065,
-    "qa_policy":"most_frequently_used",
+    "qa_policy":"most_recently_used",
     "explore_policy":"bfs",
     "forget_policy":"lru",
     "remember_policy":"all",
@@ -3210,16 +2480,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":102.6,
-    "test_std":27.2660961636,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":4,
-    "n_seeds":5
-  },
-  {
     "test_mean":100.4,
     "test_std":13.3056379028,
     "qa_policy":"most_recently_added",
@@ -3227,26 +2487,6 @@
     "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":99.6,
-    "test_std":28.4084494473,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":4,
-    "n_seeds":5
-  },
-  {
-    "test_mean":98.6,
-    "test_std":30.7284884106,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
     "n_seeds":5
   },
   {
@@ -3262,7 +2502,7 @@
   {
     "test_mean":96.8,
     "test_std":15.9549365401,
-    "qa_policy":"most_frequently_used",
+    "qa_policy":"most_recently_used",
     "explore_policy":"bfs",
     "forget_policy":"fifo",
     "remember_policy":"all",
@@ -3272,7 +2512,7 @@
   {
     "test_mean":96.8,
     "test_std":15.9549365401,
-    "qa_policy":"most_recently_used",
+    "qa_policy":"most_frequently_used",
     "explore_policy":"bfs",
     "forget_policy":"fifo",
     "remember_policy":"all",
@@ -3300,26 +2540,6 @@
     "n_seeds":5
   },
   {
-    "test_mean":95.2,
-    "test_std":25.3724259778,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":95.0,
-    "test_std":20.6203782701,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":4,
-    "n_seeds":5
-  },
-  {
     "test_mean":92.4,
     "test_std":41.8263075109,
     "qa_policy":"most_frequently_used",
@@ -3337,16 +2557,6 @@
     "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":89.8,
-    "test_std":27.3159294186,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":4,
     "n_seeds":5
   },
   {
@@ -3381,22 +2591,22 @@
   },
   {
     "test_mean":84.8,
-    "test_std":37.3598715201,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":8,
-    "n_seeds":5
-  },
-  {
-    "test_mean":84.8,
     "test_std":32.9448023215,
     "qa_policy":"most_recently_added",
     "explore_policy":"random",
     "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":4,
+    "n_seeds":5
+  },
+  {
+    "test_mean":84.8,
+    "test_std":37.3598715201,
+    "qa_policy":"most_recently_added",
+    "explore_policy":"random",
+    "forget_policy":"fifo",
+    "remember_policy":"all",
+    "memory_size":8,
     "n_seeds":5
   },
   {
@@ -3412,49 +2622,19 @@
   {
     "test_mean":83.0,
     "test_std":36.7804295788,
-    "qa_policy":"most_frequently_used",
+    "qa_policy":"most_recently_used",
     "explore_policy":"random",
     "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":4,
-    "n_seeds":5
-  },
-  {
-    "test_mean":83.0,
-    "test_std":40.7038081756,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":2,
     "n_seeds":5
   },
   {
     "test_mean":83.0,
     "test_std":36.7804295788,
-    "qa_policy":"most_recently_used",
+    "qa_policy":"most_frequently_used",
     "explore_policy":"random",
     "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":4,
-    "n_seeds":5
-  },
-  {
-    "test_mean":82.0,
-    "test_std":39.9249295554,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":8,
-    "n_seeds":5
-  },
-  {
-    "test_mean":81.2,
-    "test_std":13.9914259459,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
     "remember_policy":"all",
     "memory_size":4,
     "n_seeds":5
@@ -3470,49 +2650,9 @@
     "n_seeds":5
   },
   {
-    "test_mean":79.8,
-    "test_std":18.9356806057,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":79.8,
-    "test_std":18.9356806057,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":79.0,
-    "test_std":15.0864177325,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":79.0,
-    "test_std":15.0864177325,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":2,
-    "n_seeds":5
-  },
-  {
     "test_mean":74.8,
     "test_std":17.6680502603,
-    "qa_policy":"most_recently_used",
+    "qa_policy":"most_frequently_used",
     "explore_policy":"dijkstra",
     "forget_policy":"lfu",
     "remember_policy":"all",
@@ -3524,7 +2664,17 @@
     "test_std":17.6680502603,
     "qa_policy":"most_recently_added",
     "explore_policy":"bfs",
-    "forget_policy":"lfu",
+    "forget_policy":"lru",
+    "remember_policy":"all",
+    "memory_size":0,
+    "n_seeds":5
+  },
+  {
+    "test_mean":74.8,
+    "test_std":17.6680502603,
+    "qa_policy":"most_frequently_used",
+    "explore_policy":"dijkstra",
+    "forget_policy":"lru",
     "remember_policy":"all",
     "memory_size":0,
     "n_seeds":5
@@ -3543,16 +2693,6 @@
     "test_mean":74.8,
     "test_std":17.6680502603,
     "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":74.8,
-    "test_std":17.6680502603,
-    "qa_policy":"most_recently_used",
     "explore_policy":"bfs",
     "forget_policy":"lfu",
     "remember_policy":"all",
@@ -3562,17 +2702,7 @@
   {
     "test_mean":74.8,
     "test_std":17.6680502603,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"lfu",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":74.8,
-    "test_std":17.6680502603,
-    "qa_policy":"most_frequently_used",
+    "qa_policy":"most_recently_added",
     "explore_policy":"dijkstra",
     "forget_policy":"lru",
     "remember_policy":"all",
@@ -3602,7 +2732,7 @@
   {
     "test_mean":74.8,
     "test_std":17.6680502603,
-    "qa_policy":"most_recently_added",
+    "qa_policy":"most_recently_used",
     "explore_policy":"dijkstra",
     "forget_policy":"lru",
     "remember_policy":"all",
@@ -3612,9 +2742,9 @@
   {
     "test_mean":74.8,
     "test_std":17.6680502603,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"lru",
+    "qa_policy":"most_recently_used",
+    "explore_policy":"dijkstra",
+    "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":0,
     "n_seeds":5
@@ -3623,6 +2753,16 @@
     "test_mean":74.8,
     "test_std":17.6680502603,
     "qa_policy":"most_frequently_used",
+    "explore_policy":"bfs",
+    "forget_policy":"lfu",
+    "remember_policy":"all",
+    "memory_size":0,
+    "n_seeds":5
+  },
+  {
+    "test_mean":74.8,
+    "test_std":17.6680502603,
+    "qa_policy":"most_recently_added",
     "explore_policy":"bfs",
     "forget_policy":"lfu",
     "remember_policy":"all",
@@ -3633,6 +2773,16 @@
     "test_mean":71.8,
     "test_std":20.4391780657,
     "qa_policy":"most_frequently_used",
+    "explore_policy":"random",
+    "forget_policy":"lru",
+    "remember_policy":"all",
+    "memory_size":4,
+    "n_seeds":5
+  },
+  {
+    "test_mean":71.8,
+    "test_std":20.4391780657,
+    "qa_policy":"most_recently_used",
     "explore_policy":"random",
     "forget_policy":"lru",
     "remember_policy":"all",
@@ -3650,41 +2800,11 @@
     "n_seeds":5
   },
   {
-    "test_mean":71.8,
-    "test_std":20.4391780657,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":4,
-    "n_seeds":5
-  },
-  {
-    "test_mean":70.2,
-    "test_std":15.689486926,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"lfu",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
     "test_mean":70.2,
     "test_std":15.689486926,
     "qa_policy":"most_recently_used",
     "explore_policy":"random",
     "forget_policy":"lru",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":70.2,
-    "test_std":15.689486926,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"lfu",
     "remember_policy":"all",
     "memory_size":0,
     "n_seeds":5
@@ -3712,6 +2832,16 @@
   {
     "test_mean":70.2,
     "test_std":15.689486926,
+    "qa_policy":"most_recently_added",
+    "explore_policy":"random",
+    "forget_policy":"lfu",
+    "remember_policy":"all",
+    "memory_size":0,
+    "n_seeds":5
+  },
+  {
+    "test_mean":70.2,
+    "test_std":15.689486926,
     "qa_policy":"most_frequently_used",
     "explore_policy":"random",
     "forget_policy":"lru",
@@ -3720,13 +2850,13 @@
     "n_seeds":5
   },
   {
-    "test_mean":69.6,
-    "test_std":28.032837887,
+    "test_mean":70.2,
+    "test_std":15.689486926,
     "qa_policy":"most_frequently_used",
     "explore_policy":"random",
-    "forget_policy":"fifo",
+    "forget_policy":"lfu",
     "remember_policy":"all",
-    "memory_size":2,
+    "memory_size":0,
     "n_seeds":5
   },
   {
@@ -3740,86 +2870,16 @@
     "n_seeds":5
   },
   {
-    "test_mean":69.4,
-    "test_std":23.5847408296,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
+    "test_mean":69.6,
+    "test_std":28.032837887,
+    "qa_policy":"most_frequently_used",
+    "explore_policy":"random",
+    "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":2,
     "n_seeds":5
   },
   {
-    "test_mean":68.4,
-    "test_std":32.0037497803,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":68.4,
-    "test_std":32.0037497803,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":2,
-    "n_seeds":5
-  },
-  {
-    "test_mean":63.4,
-    "test_std":31.0522140918,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":4,
-    "n_seeds":5
-  },
-  {
-    "test_mean":56.4,
-    "test_std":23.4145254063,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":56.4,
-    "test_std":23.4145254063,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":56.4,
-    "test_std":23.4145254063,
-    "qa_policy":"most_recently_added",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":56.4,
-    "test_std":23.4145254063,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"dijkstra",
-    "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
     "test_mean":56.4,
     "test_std":23.4145254063,
     "qa_policy":"most_recently_added",
@@ -3842,9 +2902,19 @@
   {
     "test_mean":56.4,
     "test_std":23.4145254063,
+    "qa_policy":"most_recently_used",
+    "explore_policy":"bfs",
+    "forget_policy":"fifo",
+    "remember_policy":"all",
+    "memory_size":0,
+    "n_seeds":5
+  },
+  {
+    "test_mean":56.4,
+    "test_std":23.4145254063,
     "qa_policy":"most_frequently_used",
     "explore_policy":"dijkstra",
-    "forget_policy":"random",
+    "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":0,
     "n_seeds":5
@@ -3852,7 +2922,7 @@
   {
     "test_mean":56.4,
     "test_std":23.4145254063,
-    "qa_policy":"most_recently_used",
+    "qa_policy":"most_frequently_used",
     "explore_policy":"bfs",
     "forget_policy":"fifo",
     "remember_policy":"all",
@@ -3863,68 +2933,8 @@
     "test_mean":56.4,
     "test_std":23.4145254063,
     "qa_policy":"most_recently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":56.4,
-    "test_std":23.4145254063,
-    "qa_policy":"most_recently_added",
     "explore_policy":"dijkstra",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":56.4,
-    "test_std":23.4145254063,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
     "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":56.4,
-    "test_std":23.4145254063,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"bfs",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":54.8,
-    "test_std":19.2291445468,
-    "qa_policy":"most_recently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":54.8,
-    "test_std":19.2291445468,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"fifo",
-    "remember_policy":"all",
-    "memory_size":0,
-    "n_seeds":5
-  },
-  {
-    "test_mean":54.8,
-    "test_std":19.2291445468,
-    "qa_policy":"most_frequently_used",
-    "explore_policy":"random",
-    "forget_policy":"random",
     "remember_policy":"all",
     "memory_size":0,
     "n_seeds":5
@@ -3942,9 +2952,9 @@
   {
     "test_mean":54.8,
     "test_std":19.2291445468,
-    "qa_policy":"most_recently_added",
+    "qa_policy":"most_frequently_used",
     "explore_policy":"random",
-    "forget_policy":"random",
+    "forget_policy":"fifo",
     "remember_policy":"all",
     "memory_size":0,
     "n_seeds":5

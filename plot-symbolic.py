@@ -31,6 +31,8 @@ for path in tqdm(glob("./training-results-symbolic/*/results.yaml")):
     qa_policy = hp["qa_policy"]
     explore_policy = hp["explore_policy"]
     forget_policy = hp.get("forget_policy", None)
+    if forget_policy.lower() == "random":
+        continue
     remember_policy = hp.get("remember_policy", "all")
     memory_size = hp.get("max_long_term_memory_size", None)
 

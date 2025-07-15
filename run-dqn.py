@@ -87,7 +87,7 @@ def run_dqn_experiment(params):
     num_iterations = (terminates_at + 1) * num_episodes
     target_update_interval = 50  # 50 to 200 is common
     epsilon_decay_until = num_iterations // 2  # 50% of iterations
-    warm_start = num_iterations // 5  # 20 percent of the iterations
+    warm_start = num_iterations // 10  # 10 percent of the iterations
 
     print(
         f"room_size: {room_size}, "
@@ -102,18 +102,18 @@ def run_dqn_experiment(params):
     stare_params = {
         "embedding_dim": embedding_dim,
         "num_layers": num_layers,
-        "gcn_drop": 0.1,
+        "gcn_drop": 0.0,
         "triple_qual_weight": 0.8,
         "silu_between_layers": True,
-        "dropout_between_layers": True,
+        "dropout_between_layers": False,
     }
 
     gcn_params = {
         "embedding_dim": embedding_dim,
         "num_layers": num_layers,
-        "gcn_drop": 0.1,
+        "gcn_drop": 0.0,
         "silu_between_layers": True,
-        "dropout_between_layers": True,
+        "dropout_between_layers": False,
     }
 
     transformer_params = {
@@ -121,7 +121,7 @@ def run_dqn_experiment(params):
         "dim_feedforward": embedding_dim * 4,
         "num_layers": num_layers,
         "num_heads": num_heads,
-        "dropout": 0.1,
+        "dropout": 0.0,
     }
 
     mlp_params = {"num_hidden_layers": mlp_hidden_layers, "dueling_dqn": True}
@@ -276,19 +276,19 @@ def is_experiment_completed(params, default_root_dir):
 
 
 if __name__ == "__main__":
-    num_processes = 2
+    num_processes = 3
     room_sizes = ["xl-different-prob"]
     test_seeds = [0, 1, 2, 3, 4]
     architecture_types = [
         "stare",
-        "gcn",
-        "transformer",
+        # "gcn",
+        # "transformer",
     ]
-    max_memories = [16, 32]
+    max_memories = [32, 64]
     policy_combinations = [
         # (forget, remember, qa, explore, separate_networks)
         ("rl", "all", "rl", "rl", False),
-        ("rl", "all", "rl", "rl", True),
+        # ("rl", "all", "rl", "rl", True),
     ]
 
     network_sizes = ["small", "big"]
